@@ -74,7 +74,8 @@
     const COLOR_ACCENT = '#FFFFFF';
 
     // Spelvariabler
-    const platformWidth = 60;
+    // Basbredd för plattformar. Själva plattformarna får individuella bredder (plat.w)
+    const basePlatformWidth = 60;
     const platformHeight = 12;
     const numPlatforms = 8;
     let platforms = [];
@@ -96,16 +97,18 @@
       const spacing = canvas.height / numPlatforms;
       for (let i = 0; i < numPlatforms; i++) {
         const y = canvas.height - i * spacing;
-        const x = Math.random() * (canvas.width - platformWidth);
-        platforms.push({ x, y });
+        // Tilldela varje plattform en individuell bredd
+        const w = basePlatformWidth;
+        const x = Math.random() * (canvas.width - w);
+        platforms.push({ x, y, w });
       }
 
-      // Skapa spelaren (ett dokument liknande rektangel med mjuka konturer)
+      // Skapa spelaren (juristdomare) med lite högre höjd för att ge plats åt huvud och klubba
       player = {
         x: canvas.width / 2 - 20,
-        y: canvas.height - 40,
+        y: canvas.height - 60,
         width: 40,
-        height: 48,
+        height: 60,
         vy: 0,
       };
 
@@ -146,7 +149,7 @@
         for (const plat of platforms) {
           if (
             player.x + player.width > plat.x &&
-            player.x < plat.x + platformWidth &&
+            player.x < plat.x + plat.w &&
             player.y + player.height > plat.y &&
             player.y + player.height < plat.y + platformHeight + player.vy
           ) {
@@ -165,10 +168,18 @@
         // Flytta plattformar nedåt relativt kamerans rörelse
         for (const plat of platforms) {
           plat.y += diff;
-          // När en plattform försvinner från botten, placera den högst upp med ny x-position
+          // När en plattform försvinner från botten, placera den högst upp med ny x-position och justera bredd/avstånd efter svårighet
           if (plat.y > canvas.height) {
-            plat.y = plat.y - canvas.height;
-            plat.x = Math.random() * (canvas.width - platformWidth);
+            // Beräkna svårighetsgrad baserat på poäng: ökar gradvis upp till faktor 3
+            const difficulty = 1 + Math.min(score / 2000, 2);
+            const baseSpacing = canvas.height / numPlatforms;
+            const newSpacing = baseSpacing * difficulty;
+            // Flytta plattformen en bit ovanför skärmen för att skapa större luckor
+            plat.y = plat.y - canvas.height - newSpacing;
+            // Justera plattformens bredd. Den minskar något med stigande svårighetsgrad (min 50% av basbredd)
+            const widthFactor = Math.max(0.5, 1 - 0.1 * difficulty);
+            plat.w = basePlatformWidth * widthFactor;
+            plat.x = Math.random() * (canvas.width - plat.w);
           }
         }
         score = Math.max(score, Math.floor(cameraY));
@@ -188,21 +199,13 @@
       // Plattformar med runda hörn
       ctx.fillStyle = COLOR_PLATFORM;
       for (const plat of platforms) {
-        drawRoundedRect(ctx, plat.x, plat.y, platformWidth, platformHeight, 6);
+        drawRoundedRect(ctx, plat.x, plat.y, plat.w, platformHeight, 6);
         // Lägg till subtil ikon i mitten av plattformen baserat på tema
-        drawPlatformIcon(ctx, plat.x + platformWidth/2, plat.y + platformHeight/2);
+        drawPlatformIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2);
       }
 
-      // Spelare som ett dokument
-      ctx.fillStyle = COLOR_PLAYER;
-      drawRoundedRect(ctx, player.x, player.y, player.width, player.height, 8);
-      // Liten horizontal linje upptill på dokumentet för att ge känsla av övre kant
-      ctx.strokeStyle = COLOR_ACCENT;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(player.x + 4, player.y + 6);
-      ctx.lineTo(player.x + player.width - 4, player.y + 6);
-      ctx.stroke();
+      // Spelare som juristdomare med domarklubba
+      drawJudge(ctx, player.x, player.y, player.width, player.height);
 
       // Poängvisning i övre vänstra hörnet
       ctx.fillStyle = COLOR_ACCENT;
@@ -257,6 +260,42 @@
           break;
       }
       ctx.stroke();
+    }
+
+    // Ritfunktion för spelaren: en juristdomare med domarklubba
+    function drawJudge(ctx, x, y, w, h) {
+      /*
+       * Figuren består av en enkel kropp (klädnad), ett huvud och en klubba.
+       * Vi använder endast de färger som definierats i paletten.
+       */
+      // Kropp/rock
+      const bodyWidth = w * 0.6;
+      const bodyHeight = h * 0.5;
+      const bodyX = x + (w - bodyWidth) / 2;
+      const bodyY = y + h - bodyHeight;
+      ctx.fillStyle = COLOR_PLAYER;
+      drawRoundedRect(ctx, bodyX, bodyY, bodyWidth, bodyHeight, 4);
+
+      // Huvud som en cirkel
+      const headRadius = w * 0.18;
+      const headX = x + w / 2;
+      const headY = bodyY - headRadius;
+      ctx.beginPath();
+      ctx.arc(headX, headY, headRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Domarklubba: ett handtag och en klubbskaft
+      const handleLength = w * 0.5;
+      const handleThickness = w * 0.05;
+      const handleX = x + w;
+      const handleY = bodyY + bodyHeight * 0.3;
+      ctx.fillRect(handleX, handleY, handleLength, handleThickness);
+      // Klubban (hammarens huvud)
+      const hammerWidth = w * 0.12;
+      const hammerHeight = w * 0.08;
+      const hammerX = handleX + handleLength - hammerWidth * 0.5;
+      const hammerY = handleY - hammerHeight * 0.5;
+      ctx.fillRect(hammerX, hammerY, hammerWidth, hammerHeight);
     }
 
     function endGame() {
