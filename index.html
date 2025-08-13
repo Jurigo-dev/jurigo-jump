@@ -49,12 +49,41 @@
     #scoreDisplay, #discountDisplay, #codeDisplay {
       margin: 6px 0;
     }
+
+    /* Kontroller för mobilt spelande */
+    #controls {
+      margin-top: 12px;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+    }
+    #controls button {
+      width: 60px;
+      height: 60px;
+      background-color: #D8CAB8;
+      border: none;
+      border-radius: 8px;
+      color: #223A6B;
+      font-size: 32px;
+      line-height: 60px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    #controls button:active {
+      opacity: 0.8;
+    }
   </style>
 </head>
 <body>
   <h1>JURIGO JUMP</h1>
   <canvas id="gameCanvas" width="360" height="600"></canvas>
   <div id="ui"></div>
+  <!-- Kontroller för mobila enheter: vänster och höger pilar -->
+  <div id="controls">
+    <button id="leftBtn">◄</button>
+    <button id="rightBtn">►</button>
+  </div>
 
   <script>
     /*
@@ -130,6 +159,30 @@
       if (e.key === 'ArrowRight') keys.right = false;
     });
 
+    // Pekknappar för mobilt spelande – håll ned för kontinuerlig rörelse
+    // Vi hämtar referenser till knapparna
+    const leftBtn = document.getElementById('leftBtn');
+    const rightBtn = document.getElementById('rightBtn');
+    // Funktioner för att sätta tangentstatus
+    function setLeftDown() { keys.left = true; }
+    function setLeftUp() { keys.left = false; }
+    function setRightDown() { keys.right = true; }
+    function setRightUp() { keys.right = false; }
+    if (leftBtn && rightBtn) {
+      // Mus-event för desktop
+      leftBtn.addEventListener('mousedown', (e) => { e.preventDefault(); setLeftDown(); });
+      leftBtn.addEventListener('mouseup', (e) => { e.preventDefault(); setLeftUp(); });
+      leftBtn.addEventListener('mouseleave', (e) => { e.preventDefault(); setLeftUp(); });
+      rightBtn.addEventListener('mousedown', (e) => { e.preventDefault(); setRightDown(); });
+      rightBtn.addEventListener('mouseup', (e) => { e.preventDefault(); setRightUp(); });
+      rightBtn.addEventListener('mouseleave', (e) => { e.preventDefault(); setRightUp(); });
+      // Touch-event för mobila enheter
+      leftBtn.addEventListener('touchstart', (e) => { e.preventDefault(); setLeftDown(); });
+      leftBtn.addEventListener('touchend', (e) => { e.preventDefault(); setLeftUp(); });
+      rightBtn.addEventListener('touchstart', (e) => { e.preventDefault(); setRightDown(); });
+      rightBtn.addEventListener('touchend', (e) => { e.preventDefault(); setRightUp(); });
+    }
+
     function update() {
       if (gameOver) return;
       // Tillämpa gravitation
@@ -137,7 +190,8 @@
       player.y += player.vy;
 
       // Flytta spelaren i sidled
-      const moveSpeed = 2.4;
+      // Öka rörelsehastigheten något för snabbare spelkänsla
+      const moveSpeed = 3.5;
       if (keys.left) player.x -= moveSpeed;
       if (keys.right) player.x += moveSpeed;
       // Wrap around för horisontell rörelse
@@ -153,8 +207,8 @@
             player.y + player.height > plat.y &&
             player.y + player.height < plat.y + platformHeight + player.vy
           ) {
-            // Nudge the player up
-            player.vy = -10; // studs styrka
+            // Nudge the player up med lite kraftigare studs
+            player.vy = -12; // studs styrka
           }
         }
       }
