@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <title>JURIGO JUMP</title>
+  <style>
+    /* Basic resets and layout */
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: sans-serif;
+      background-color: #223A6B; /* djup blå bakgrund */
+      color: #FFFFFF;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      margin-top: 20px;
+      margin-bottom: 10px;
+      font-size: 24px;
+      color: #D8CAB8; /* beige rubrik */
+    }
+    #gameCanvas {
+      width: 360px;
+      height: 600px;
+      border: 2px solid #D8CAB8;
+      border-radius: 8px;
+      background-color: #223A6B;
+    }
+    #ui {
+      margin-top: 12px;
+      text-align: center;
+    }
+    button {
+      background-color: #D8CAB8;
+      color: #223A6B;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      margin: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    #scoreDisplay, #discountDisplay, #codeDisplay {
+      margin: 6px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>JURIGO JUMP</h1>
+  <canvas id="gameCanvas" width="360" height="600"></canvas>
+  <div id="ui"></div>
+
+  <script>
+    /*
+     * Jurigo Jump – ett enkelt skicklighetsspel inspirerat av Doodle Jump.
+     * Spelaren styr ett "dokument" som hoppar uppåt mellan plattformar. 
+     * Poängen ökar ju högre man kommer. Vid spelavslut genereras en rabattkod
+     * baserad på poängen, upp till 500 kr. 
+     */
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Konstanter för färgpalett
+    const COLOR_BG = '#223A6B';
+    const COLOR_PLATFORM = '#D8CAB8';
+    const COLOR_PLAYER = '#D8CAB8';
+    const COLOR_ACCENT = '#FFFFFF';
+
+    // Spelvariabler
+    const platformWidth = 60;
+    const platformHeight = 12;
+    const numPlatforms = 8;
+    let platforms = [];
+    let player;
+    let cameraY;
+    let score;
+    let gameOver;
+    let keys = { left: false, right: false };
+
+    // Initialisering av spelet
+    function init() {
+      platforms = [];
+      // Startar kameran vid 0 – desto högre den flyttas upp, desto högre poäng
+      cameraY = 0;
+      score = 0;
+      gameOver = false;
+
+      // Skapa plattformar med slumpade x-positioner men jämn y-fördelning
+      const spacing = canvas.height / numPlatforms;
+      for (let i = 0; i < numPlatforms; i++) {
+        const y = canvas.height - i * spacing;
+        const x = Math.random() * (canvas.width - platformWidth);
+        platforms.push({ x, y });
+      }
+
+      // Skapa spelaren (ett dokument liknande rektangel med mjuka konturer)
+      player = {
+        x: canvas.width / 2 - 20,
+        y: canvas.height - 40,
+        width: 40,
+        height: 48,
+        vy: 0,
+      };
+
+      // Rensa UI
+      document.getElementById('ui').innerHTML = '';
+    }
+
+    // Inputhantering
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') keys.left = true;
+      if (e.key === 'ArrowRight') keys.right = true;
+      // Starta om spelet när man trycker på mellanslag efter game over
+      if (gameOver && e.key === ' ') {
+        init();
+      }
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowLeft') keys.left = false;
+      if (e.key === 'ArrowRight') keys.right = false;
+    });
+
+    function update() {
+      if (gameOver) return;
+      // Tillämpa gravitation
+      player.vy += 0.5;
+      player.y += player.vy;
+
+      // Flytta spelaren i sidled
+      const moveSpeed = 2.4;
+      if (keys.left) player.x -= moveSpeed;
+      if (keys.right) player.x += moveSpeed;
+      // Wrap around för horisontell rörelse
+      if (player.x < -player.width) player.x = canvas.width;
+      if (player.x > canvas.width) player.x = -player.width;
+
+      // Plattformskollisioner – bara när spelaren är på väg nedåt
+      if (player.vy > 0) {
+        for (const plat of platforms) {
+          if (
+            player.x + player.width > plat.x &&
+            player.x < plat.x + platformWidth &&
+            player.y + player.height > plat.y &&
+            player.y + player.height < plat.y + platformHeight + player.vy
+          ) {
+            // Nudge the player up
+            player.vy = -10; // studs styrka
+          }
+        }
+      }
+
+      // Kamera – om spelaren når en höjd (y) som är högre än hälften av canvashöjden
+      const threshold = canvas.height * 0.4;
+      if (player.y < threshold) {
+        const diff = threshold - player.y;
+        player.y = threshold;
+        cameraY += diff;
+        // Flytta plattformar nedåt relativt kamerans rörelse
+        for (const plat of platforms) {
+          plat.y += diff;
+          // När en plattform försvinner från botten, placera den högst upp med ny x-position
+          if (plat.y > canvas.height) {
+            plat.y = plat.y - canvas.height;
+            plat.x = Math.random() * (canvas.width - platformWidth);
+          }
+        }
+        score = Math.max(score, Math.floor(cameraY));
+      }
+
+      // Game over – spelaren faller under nederkanten av canvas
+      if (player.y > canvas.height) {
+          endGame();
+      }
+    }
+
+    function draw() {
+      // Bakgrund
+      ctx.fillStyle = COLOR_BG;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Plattformar med runda hörn
+      ctx.fillStyle = COLOR_PLATFORM;
+      for (const plat of platforms) {
+        drawRoundedRect(ctx, plat.x, plat.y, platformWidth, platformHeight, 6);
+        // Lägg till subtil ikon i mitten av plattformen baserat på tema
+        drawPlatformIcon(ctx, plat.x + platformWidth/2, plat.y + platformHeight/2);
+      }
+
+      // Spelare som ett dokument
+      ctx.fillStyle = COLOR_PLAYER;
+      drawRoundedRect(ctx, player.x, player.y, player.width, player.height, 8);
+      // Liten horizontal linje upptill på dokumentet för att ge känsla av övre kant
+      ctx.strokeStyle = COLOR_ACCENT;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(player.x + 4, player.y + 6);
+      ctx.lineTo(player.x + player.width - 4, player.y + 6);
+      ctx.stroke();
+
+      // Poängvisning i övre vänstra hörnet
+      ctx.fillStyle = COLOR_ACCENT;
+      ctx.font = '16px sans-serif';
+      ctx.fillText('Poäng: ' + score, 8, 20);
+    }
+
+    function drawRoundedRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Ritfunktion för subtile ikoner på plattformar
+    function drawPlatformIcon(ctx, cx, cy) {
+      // slumpa mellan några olika ikoner: pass, kontrakt, box, hus
+      const rand = Math.floor((cx + cy) % 4);
+      ctx.strokeStyle = COLOR_BG;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      switch (rand) {
+        case 0: // hus
+          ctx.moveTo(cx - 6, cy + 4);
+          ctx.lineTo(cx - 6, cy);
+          ctx.lineTo(cx, cy - 6);
+          ctx.lineTo(cx + 6, cy);
+          ctx.lineTo(cx + 6, cy + 4);
+          break;
+        case 1: // kontrakt (papper)
+          ctx.rect(cx - 5, cy - 5, 10, 10);
+          break;
+        case 2: // pass/bok
+          ctx.rect(cx - 5, cy - 4, 10, 8);
+          ctx.moveTo(cx - 3, cy - 4);
+          ctx.lineTo(cx - 3, cy + 4);
+          break;
+        case 3: // box
+          ctx.rect(cx - 4, cy - 4, 8, 8);
+          ctx.moveTo(cx - 4, cy);
+          ctx.lineTo(cx + 4, cy);
+          ctx.moveTo(cx, cy - 4);
+          ctx.lineTo(cx, cy + 4);
+          break;
+      }
+      ctx.stroke();
+    }
+
+    function endGame() {
+      gameOver = true;
+      // Räkna ut rabatt baserat på poäng (100 kr per 1000 poäng, max 500 kr)
+      const discount = Math.min(Math.floor(score / 1000) * 100, 500);
+      // Generera en simpel kod med slumpmässiga tecken
+      const randStr = Math.random().toString(36).substr(2, 6).toUpperCase();
+      const code = `JURI-${discount}-${randStr}`;
+      // Visa UI med resultat
+      const ui = document.getElementById('ui');
+      ui.innerHTML = '';
+      const scoreEl = document.createElement('div');
+      scoreEl.id = 'scoreDisplay';
+      scoreEl.textContent = `Din poäng: ${score}`;
+      ui.appendChild(scoreEl);
+      const discountEl = document.createElement('div');
+      discountEl.id = 'discountDisplay';
+      discountEl.textContent = `Rabatt: ${discount} kr`;
+      ui.appendChild(discountEl);
+      const codeEl = document.createElement('div');
+      codeEl.id = 'codeDisplay';
+      codeEl.textContent = `Kod: ${code}`;
+      ui.appendChild(codeEl);
+      // Kopieringsknapp
+      const copyBtn = document.createElement('button');
+      copyBtn.textContent = 'Kopiera kod';
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(code);
+        copyBtn.textContent = 'Kopierad!';
+        setTimeout(() => copyBtn.textContent = 'Kopiera kod', 1500);
+      };
+      ui.appendChild(copyBtn);
+      // Spela igen-knapp
+      const replayBtn = document.createElement('button');
+      replayBtn.textContent = 'Spela igen';
+      replayBtn.onclick = init;
+      ui.appendChild(replayBtn);
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    init();
+    loop();
+  </script>
+</body>
+</html>
