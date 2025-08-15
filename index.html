@@ -114,6 +114,18 @@
     let gameOver;
     let keys = { left: false, right: false };
 
+    // Tillägg för avancerat spel: sannolikheter och bonusar
+    // Sannolikhet att en plattform är en fälla (dödsfälla). Ökar med svårighetsgrad men är alltid låg.
+    const BASE_HAZARD_PROB = 0.05;
+    // Sannolikhet att en plattform är skör (går sönder efter några hopp). Ökar med svårighetsgrad.
+    const BASE_FRAGILE_PROB = 0.3;
+    // Sannolikhet att en plattform får ett samlarobjekt (lagbok, våg eller klubba).
+    const BASE_ITEM_PROB = 0.2;
+    // Poängbonus för att plocka ett samlarobjekt
+    const ITEM_SCORE_BONUS = 500;
+    // Objekt som kan samlas
+    const ITEMS = ['lawbook', 'scales', 'gavel'];
+
     // Initialisering av spelet
     function init() {
       platforms = [];
@@ -123,23 +135,32 @@
       gameOver = false;
 
       // Skapa plattformar med slumpade x-positioner men jämn y-fördelning
-      const spacing = canvas.height / numPlatforms;
-      for (let i = 0; i < numPlatforms; i++) {
-        const y = canvas.height - i * spacing;
-        // Tilldela varje plattform en individuell bredd
-        const w = basePlatformWidth;
-        const x = Math.random() * (canvas.width - w);
-        platforms.push({ x, y, w });
-      }
-
-      // Skapa spelaren (juristdomare) med lite högre höjd för att ge plats åt huvud och klubba
+      // Den nedersta plattformen placeras direkt under spelaren för att underlätta starten.
+      // Beräkna avstånd mellan plattformar under init. Vi lägger till en extra division för att lämna utrymme under den nedersta plattformen.
+      const spacing = canvas.height / (numPlatforms + 1);
+      // Skapa spelarens startposition innan vi bestämmer plattformen under den. Spelaren placeras strax ovanför den nedersta plattformen.
       player = {
         x: canvas.width / 2 - 20,
-        y: canvas.height - 60,
         width: 40,
         height: 60,
+        // Lägg spelaren två plattformshöjder ovanför nedersta plattformen minus lite marginal
+        y: canvas.height - spacing - 60 - 10,
         vy: 0,
       };
+      for (let i = 0; i < numPlatforms; i++) {
+        // Fördela plattformar jämnt i vertikalled. Nedersta plattformen (i=0) hamnar vid canvas.height - spacing
+        const y = canvas.height - (i + 1) * spacing;
+        const w = basePlatformWidth;
+        let x;
+        // Den nedersta plattformen placeras centrerat under spelaren
+        if (i === 0) {
+          x = player.x + player.width / 2 - w / 2;
+        } else {
+          x = Math.random() * (canvas.width - w);
+        }
+        // Alla startplattformar är stabila och utan objekt
+        platforms.push({ x, y, w, type: 'stable', hitsLeft: Infinity, broken: false, item: null });
+      }
 
       // Rensa UI
       document.getElementById('ui').innerHTML = '';
@@ -201,14 +222,34 @@
       // Plattformskollisioner – bara när spelaren är på väg nedåt
       if (player.vy > 0) {
         for (const plat of platforms) {
+          // Hoppa över trasiga plattformar – de går inte att landa på längre
+          if (plat.broken) continue;
           if (
             player.x + player.width > plat.x &&
             player.x < plat.x + plat.w &&
             player.y + player.height > plat.y &&
             player.y + player.height < plat.y + platformHeight + player.vy
           ) {
-            // Nudge the player up med lite kraftigare studs
-            player.vy = -12; // studs styrka
+            // Om plattformen är en fälla avslutas spelet direkt
+            if (plat.type === 'hazard') {
+              endGame();
+              return;
+            }
+            // Studsa spelaren uppåt
+            player.vy = -12;
+            // Plocka eventuellt samlarobjekt
+            if (plat.item) {
+              score += ITEM_SCORE_BONUS;
+              plat.item = null;
+            }
+            // Hantera sköra plattformar: minska antal hopp kvar och markera som trasig om de tar slut
+            if (plat.type === 'fragile') {
+              plat.hitsLeft--;
+              if (plat.hitsLeft <= 0) {
+                plat.broken = true;
+              }
+            }
+            break;
           }
         }
       }
@@ -224,22 +265,59 @@
           plat.y += diff;
           // När en plattform försvinner från botten, placera den längst upp med ny x-position och justera bredd/avstånd efter svårighet
           if (plat.y > canvas.height) {
-            // Beräkna svårighetsgrad baserat på poängen: ökar gradvis upp till faktor 3
+            // När en plattform försvinner från nederkanten placerar vi den ovanför den högsta plattformen.
+            // Beräkna svårighetsgrad baserat på poäng: ökar gradvis upp till faktor 3
             const difficulty = 1 + Math.min(score / 2000, 2);
             const baseSpacing = canvas.height / numPlatforms;
-            // Beräkna ett önskat mellanrum mellan plattformar som ökar med svårigheten men begränsas av maxGap
+            // Mellanrummet ökar med svårigheten men begränsas så att spelaren alltid kan nå nästa plattform
             let spacing = baseSpacing * difficulty;
-            const maxGap = 150; // maximal vertikal lucka så att spelaren kan hoppa upp till nästa plattform
+            const maxGap = 150;
             if (spacing > maxGap) spacing = maxGap;
-            // Breddfaktor: slumpa mellan ett minsta värde och 1 för att skapa variation och minskad bredd vid högre svårighet
+            // Breddfaktor: slumpa mellan ett minimum (som minskar med svårighet) och 1 för variation
             const minWidthFactor = Math.max(0.4, 1 - 0.2 * difficulty);
             const widthFactor = minWidthFactor + Math.random() * (1 - minWidthFactor);
             plat.w = basePlatformWidth * widthFactor;
-            // Hitta den nuvarande högsta (lägsta y) plattformen för att placera denna ovanför
+            // Bestäm den nya y-positionen ovanför den nuvarande högsta plattformen
             const minY = Math.min(...platforms.map(p => p.y));
             plat.y = minY - spacing;
-            // Slumpa en ny x-position inom canvasbredden
+            // Slumpa en ny x-position inom canvasens bredd
             plat.x = Math.random() * (canvas.width - plat.w);
+            // Återställ status: plattform är inte trasig
+            plat.broken = false;
+            // Bestäm plattformstyp och samlarobjekt beroende på svårighetsgrad
+            // Justera sannolikheter baserat på svårighet
+            let hazardProb = BASE_HAZARD_PROB + 0.03 * (difficulty - 1);
+            let fragileProb = BASE_FRAGILE_PROB + 0.1 * (difficulty - 1);
+            let itemProb = BASE_ITEM_PROB;
+            // Begränsa sannolikheterna mellan 0 och 0.9 så att vi alltid har ett rimligt antal säkra plattformar
+            hazardProb = Math.min(Math.max(hazardProb, 0), 0.2);
+            fragileProb = Math.min(Math.max(fragileProb, 0), 0.7);
+            // Undvik fällor i början av spelet (låga poäng) genom att sätta hazardProb till 0 om poängen är låg
+            if (score < 1000) hazardProb = 0;
+            // Slumpa typ baserat på fördelningen
+            const r = Math.random();
+            if (r < hazardProb) {
+              // Fälla: om spelaren landar på den tar spelet slut
+              plat.type = 'hazard';
+              plat.hitsLeft = 1;
+              plat.item = null;
+            } else if (r < hazardProb + fragileProb) {
+              // Skör plattform: klarar bara ett begränsat antal hopp
+              plat.type = 'fragile';
+              plat.hitsLeft = 3;
+              plat.item = null;
+            } else {
+              // Stabil plattform
+              plat.type = 'stable';
+              plat.hitsLeft = Infinity;
+              plat.item = null;
+            }
+            // Tilldela eventuellt samlarobjekt om plattformen inte är en fälla
+            if (plat.type !== 'hazard' && Math.random() < itemProb) {
+              // Välj ett slumpmässigt objekt
+              const idx = Math.floor(Math.random() * ITEMS.length);
+              plat.item = ITEMS[idx];
+            }
           }
         }
         score = Math.max(score, Math.floor(cameraY));
@@ -257,11 +335,27 @@
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Plattformar med runda hörn
-      ctx.fillStyle = COLOR_PLATFORM;
       for (const plat of platforms) {
+        // Rita inte trasiga plattformar
+        if (plat.broken) continue;
+        // Basen ritas alltid i plattformens färg
+        ctx.fillStyle = COLOR_PLATFORM;
         drawRoundedRect(ctx, plat.x, plat.y, plat.w, platformHeight, 6);
-        // Lägg till subtil ikon i mitten av plattformen baserat på tema
-        drawPlatformIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2);
+        // Överlagring baserat på typ
+        if (plat.type === 'fragile') {
+          // Sköra plattformar får sprickor som antyder att de går sönder efter några hopp
+          drawCracks(ctx, plat.x, plat.y, plat.w, platformHeight);
+        } else if (plat.type === 'hazard') {
+          // Fällor markeras med ett kors
+          drawHazardIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2, plat.w, platformHeight);
+        }
+        // Rita samlarobjekt om det finns
+        if (plat.item) {
+          drawItemIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2, plat.item);
+        } else {
+          // Om ingen samlarobjekt eller fälla, rita en subtil ikon för tematiken
+          drawPlatformIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2);
+        }
       }
 
       // Spelare som juristdomare med domarklubba
@@ -317,6 +411,74 @@
           ctx.lineTo(cx + 4, cy);
           ctx.moveTo(cx, cy - 4);
           ctx.lineTo(cx, cy + 4);
+          break;
+      }
+      ctx.stroke();
+    }
+
+    // Ritfunktion för att rita sprickor på sköra plattformar
+    function drawCracks(ctx, x, y, w, h) {
+      ctx.strokeStyle = COLOR_BG;
+      ctx.lineWidth = 1;
+      // Rita två diagonala sprickor
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.1, y + h * 0.2);
+      ctx.lineTo(x + w * 0.9, y + h * 0.8);
+      ctx.moveTo(x + w * 0.9, y + h * 0.2);
+      ctx.lineTo(x + w * 0.1, y + h * 0.8);
+      ctx.stroke();
+    }
+
+    // Ritfunktion för fällor: ritar ett X över plattformen
+    function drawHazardIcon(ctx, cx, cy, w, h) {
+      ctx.strokeStyle = COLOR_BG;
+      ctx.lineWidth = 2;
+      const halfW = w * 0.4;
+      const halfH = h * 0.4;
+      ctx.beginPath();
+      ctx.moveTo(cx - halfW, cy - halfH);
+      ctx.lineTo(cx + halfW, cy + halfH);
+      ctx.moveTo(cx + halfW, cy - halfH);
+      ctx.lineTo(cx - halfW, cy + halfH);
+      ctx.stroke();
+    }
+
+    // Ritfunktion för samlarobjekt (lagbok, våg, domarklubba)
+    function drawItemIcon(ctx, cx, cy, item) {
+      ctx.strokeStyle = COLOR_BG;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      switch (item) {
+        case 'lawbook':
+          // Ett enkelt bok/pärm-symbol
+          ctx.rect(cx - 5, cy - 4, 10, 8);
+          ctx.moveTo(cx - 3, cy - 4);
+          ctx.lineTo(cx - 3, cy + 4);
+          break;
+        case 'scales':
+          // Våg-symbol: central pelare och två fat
+          // pelare
+          ctx.moveTo(cx, cy - 5);
+          ctx.lineTo(cx, cy + 5);
+          // översta tvärbalk
+          ctx.moveTo(cx - 6, cy - 1);
+          ctx.lineTo(cx + 6, cy - 1);
+          // vänster fat
+          ctx.moveTo(cx - 5, cy + 2);
+          ctx.lineTo(cx - 7, cy + 4);
+          ctx.lineTo(cx - 3, cy + 4);
+          ctx.closePath();
+          ctx.moveTo(cx + 5, cy + 2);
+          ctx.lineTo(cx + 7, cy + 4);
+          ctx.lineTo(cx + 3, cy + 4);
+          ctx.closePath();
+          break;
+        case 'gavel':
+          // En liten klubba: skaft och huvud
+          ctx.moveTo(cx - 5, cy);
+          ctx.lineTo(cx + 5, cy);
+          ctx.moveTo(cx + 3, cy - 3);
+          ctx.lineTo(cx + 3, cy + 3);
           break;
       }
       ctx.stroke();
