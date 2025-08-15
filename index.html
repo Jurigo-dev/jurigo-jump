@@ -116,11 +116,14 @@
 
     // Tillägg för avancerat spel: sannolikheter och bonusar
     // Sannolikhet att en plattform är en fälla (dödsfälla). Ökar med svårighetsgrad men är alltid låg.
-    const BASE_HAZARD_PROB = 0.05;
+    // Fällor/minor tas bort helt i denna version – sannolikheten sätts till 0 så att de aldrig skapas.
+    const BASE_HAZARD_PROB = 0;
     // Sannolikhet att en plattform är skör (går sönder efter några hopp). Ökar med svårighetsgrad.
     const BASE_FRAGILE_PROB = 0.3;
     // Sannolikhet att en plattform får ett samlarobjekt (lagbok, våg eller klubba).
     const BASE_ITEM_PROB = 0.2;
+    // Sannolikhet att en plattform är en studsmatta som ger extra studs (spring). Ökar något med svårighetsgrad.
+    const BASE_SPRING_PROB = 0.1;
     // Poängbonus för att plocka ett samlarobjekt
     const ITEM_SCORE_BONUS = 500;
     // Objekt som kan samlas
@@ -230,13 +233,18 @@
             player.y + player.height > plat.y &&
             player.y + player.height < plat.y + platformHeight + player.vy
           ) {
-            // Om plattformen är en fälla avslutas spelet direkt
+            // Om det mot förmodan finns en fälla/mina (ska ej förekomma) avslutas spelet direkt
             if (plat.type === 'hazard') {
               endGame();
               return;
             }
-            // Studsa spelaren uppåt
-            player.vy = -12;
+            // Studsa spelaren uppåt: studsmattor ger en kraftigare studs
+            if (plat.type === 'spring') {
+              player.vy = -18;
+            } else {
+              // Standardstuds för stabila och sköra plattformar
+              player.vy = -12;
+            }
             // Plocka eventuellt samlarobjekt
             if (plat.item) {
               score += ITEM_SCORE_BONUS;
@@ -249,6 +257,7 @@
                 plat.broken = true;
               }
             }
+            // Studsmattor och stabila plattformar påverkas inte av hopp (hitsLeft ändras ej)
             break;
           }
         }
@@ -288,25 +297,27 @@
             plat.broken = false;
             // Bestäm plattformstyp och samlarobjekt beroende på svårighetsgrad
             // Justera sannolikheter baserat på svårighet
-            let hazardProb = BASE_HAZARD_PROB + 0.03 * (difficulty - 1);
+            // Sannolikheter för olika plattformstyper baserat på svårighetsgrad.
+            // HazardProb hålls alltid 0 eftersom minor/fällor är borttagna.
+            let hazardProb = 0;
             let fragileProb = BASE_FRAGILE_PROB + 0.1 * (difficulty - 1);
+            // Sannolikheten att få en studsmatta ökar lite med svårighetsgrad
+            let springProb = BASE_SPRING_PROB + 0.05 * (difficulty - 1);
             let itemProb = BASE_ITEM_PROB;
-            // Begränsa sannolikheterna mellan 0 och 0.9 så att vi alltid har ett rimligt antal säkra plattformar
-            hazardProb = Math.min(Math.max(hazardProb, 0), 0.2);
+            // Begränsa sannolikheterna så att de håller sig inom rimliga gränser
             fragileProb = Math.min(Math.max(fragileProb, 0), 0.7);
-            // Undvik fällor i början av spelet (låga poäng) genom att sätta hazardProb till 0 om poängen är låg
-            if (score < 1000) hazardProb = 0;
-            // Slumpa typ baserat på fördelningen
+            springProb = Math.min(Math.max(springProb, 0), 0.2);
+            // Slumpa typ baserat på fördelningen. HazardProb är 0 och ignoreras.
             const r = Math.random();
-            if (r < hazardProb) {
-              // Fälla: om spelaren landar på den tar spelet slut
-              plat.type = 'hazard';
-              plat.hitsLeft = 1;
-              plat.item = null;
-            } else if (r < hazardProb + fragileProb) {
+            if (r < fragileProb) {
               // Skör plattform: klarar bara ett begränsat antal hopp
               plat.type = 'fragile';
               plat.hitsLeft = 3;
+              plat.item = null;
+            } else if (r < fragileProb + springProb) {
+              // Studsmatta: ger extra studs men går aldrig sönder
+              plat.type = 'spring';
+              plat.hitsLeft = Infinity;
               plat.item = null;
             } else {
               // Stabil plattform
@@ -314,7 +325,7 @@
               plat.hitsLeft = Infinity;
               plat.item = null;
             }
-            // Tilldela eventuellt samlarobjekt om plattformen inte är en fälla
+            // Tilldela eventuellt samlarobjekt om plattformen är stabil eller skör eller studsmatta
             if (plat.type !== 'hazard' && Math.random() < itemProb) {
               // Välj ett slumpmässigt objekt
               const idx = Math.floor(Math.random() * ITEMS.length);
@@ -348,6 +359,9 @@
         } else if (plat.type === 'fragile') {
           // Sköra plattformar är vita så de skiljer sig tydligt från de stabila
           baseColor = COLOR_ACCENT;
+        } else if (plat.type === 'spring') {
+          // Studsmattor använder samma basfärg som stabila plattformar men får en särskild ikon
+          baseColor = COLOR_PLATFORM;
         } else {
           // Stabil plattform
           baseColor = COLOR_PLATFORM;
@@ -362,6 +376,10 @@
           // Fällor markeras med ett kors i beige färg för att synas mot den mörka bakgrunden
           ctx.strokeStyle = COLOR_PLATFORM;
           drawHazardIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2, plat.w, platformHeight);
+        } else if (plat.type === 'spring') {
+          // Rita studsmatta: visa spiraler eller bågar för att indikera studs
+          ctx.strokeStyle = COLOR_BG;
+          drawSpringIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2, plat.w, platformHeight);
         }
         // Rita samlarobjekt om det finns
         if (plat.item) {
@@ -515,6 +533,26 @@
           break;
       }
       ctx.stroke();
+    }
+
+    // Ritfunktion för studsmattor – ritar en serie halvcirklar (spiraler) för att visa studs
+    // cx, cy är mitten av plattformen och w, h är dess bredd och höjd
+    function drawSpringIcon(ctx, cx, cy, w, h) {
+      ctx.strokeStyle = COLOR_BG;
+      ctx.lineWidth = 2;
+      const coilCount = 3;
+      // Radiens storlek för varje halvcirkel – relativ mot plattformens bredd
+      const coilRadius = w * 0.2;
+      // Vertikalt avstånd mellan varje coil
+      const verticalGap = h * 0.6 / (coilCount - 1);
+      // Startpositioner: centrerade runt cy
+      for (let i = 0; i < coilCount; i++) {
+        const yPos = cy - (h * 0.3) + i * verticalGap;
+        ctx.beginPath();
+        // Rita en halvcirkel uppåt
+        ctx.arc(cx, yPos, coilRadius, 0, Math.PI, false);
+        ctx.stroke();
+      }
     }
 
     // Ritfunktion för spelaren: en juristdomare med domarklubba
