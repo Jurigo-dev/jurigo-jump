@@ -222,17 +222,23 @@
         // Flytta plattformar nedåt relativt kamerans rörelse
         for (const plat of platforms) {
           plat.y += diff;
-          // När en plattform försvinner från botten, placera den högst upp med ny x-position och justera bredd/avstånd efter svårighet
+          // När en plattform försvinner från botten, placera den längst upp med ny x-position och justera bredd/avstånd efter svårighet
           if (plat.y > canvas.height) {
-            // Beräkna svårighetsgrad baserat på poäng: ökar gradvis upp till faktor 3
+            // Beräkna svårighetsgrad baserat på poängen: ökar gradvis upp till faktor 3
             const difficulty = 1 + Math.min(score / 2000, 2);
             const baseSpacing = canvas.height / numPlatforms;
-            const newSpacing = baseSpacing * difficulty;
-            // Flytta plattformen en bit ovanför skärmen för att skapa större luckor
-            plat.y = plat.y - canvas.height - newSpacing;
-            // Justera plattformens bredd. Den minskar något med stigande svårighetsgrad (min 50% av basbredd)
-            const widthFactor = Math.max(0.5, 1 - 0.1 * difficulty);
+            // Beräkna ett önskat mellanrum mellan plattformar som ökar med svårigheten men begränsas av maxGap
+            let spacing = baseSpacing * difficulty;
+            const maxGap = 150; // maximal vertikal lucka så att spelaren kan hoppa upp till nästa plattform
+            if (spacing > maxGap) spacing = maxGap;
+            // Breddfaktor: slumpa mellan ett minsta värde och 1 för att skapa variation och minskad bredd vid högre svårighet
+            const minWidthFactor = Math.max(0.4, 1 - 0.2 * difficulty);
+            const widthFactor = minWidthFactor + Math.random() * (1 - minWidthFactor);
             plat.w = basePlatformWidth * widthFactor;
+            // Hitta den nuvarande högsta (lägsta y) plattformen för att placera denna ovanför
+            const minY = Math.min(...platforms.map(p => p.y));
+            plat.y = minY - spacing;
+            // Slumpa en ny x-position inom canvasbredden
             plat.x = Math.random() * (canvas.width - plat.w);
           }
         }
