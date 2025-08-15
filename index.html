@@ -338,24 +338,34 @@
       for (const plat of platforms) {
         // Rita inte trasiga plattformar
         if (plat.broken) continue;
-        // Basen ritas alltid i plattformens färg
-        ctx.fillStyle = COLOR_PLATFORM;
+        // Välj basfärg beroende på plattformstyp
+        let baseColor;
+        if (plat.type === 'hazard') {
+          // Fällor är mörka för att ge en tydlig varning
+          baseColor = COLOR_BG;
+        } else if (plat.type === 'fragile') {
+          // Sköra plattformar är vita så de skiljer sig tydligt från de stabila
+          baseColor = COLOR_ACCENT;
+        } else {
+          // Stabil plattform
+          baseColor = COLOR_PLATFORM;
+        }
+        ctx.fillStyle = baseColor;
         drawRoundedRect(ctx, plat.x, plat.y, plat.w, platformHeight, 6);
         // Överlagring baserat på typ
         if (plat.type === 'fragile') {
-          // Sköra plattformar får sprickor som antyder att de går sönder efter några hopp
+          // Sköra plattformar får tydliga sprickor och tjockare linjer
           drawCracks(ctx, plat.x, plat.y, plat.w, platformHeight);
         } else if (plat.type === 'hazard') {
-          // Fällor markeras med ett kors
+          // Fällor markeras med ett kors i beige färg för att synas mot den mörka bakgrunden
+          ctx.strokeStyle = COLOR_PLATFORM;
           drawHazardIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2, plat.w, platformHeight);
         }
         // Rita samlarobjekt om det finns
         if (plat.item) {
           drawItemIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2, plat.item);
-        } else {
-          // Om ingen samlarobjekt eller fälla, rita en subtil ikon för tematiken
-          drawPlatformIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2);
         }
+        // Inga övriga ikoner – vi tar bort mönstret för att ge ett renare och mer juridiskt tema
       }
 
       // Spelare som juristdomare med domarklubba
@@ -419,8 +429,9 @@
     // Ritfunktion för att rita sprickor på sköra plattformar
     function drawCracks(ctx, x, y, w, h) {
       ctx.strokeStyle = COLOR_BG;
-      ctx.lineWidth = 1;
-      // Rita två diagonala sprickor
+      // Använd en något tjockare linje för att göra sprickorna tydliga
+      ctx.lineWidth = 3;
+      // Rita två diagonala sprickor som bildar ett tydligt "X"
       ctx.beginPath();
       ctx.moveTo(x + w * 0.1, y + h * 0.2);
       ctx.lineTo(x + w * 0.9, y + h * 0.8);
@@ -431,8 +442,9 @@
 
     // Ritfunktion för fällor: ritar ett X över plattformen
     function drawHazardIcon(ctx, cx, cy, w, h) {
-      ctx.strokeStyle = COLOR_BG;
-      ctx.lineWidth = 2;
+      // Använd den aktuella strokeStyle som sätts av den anropande koden för att rita korset
+      // Gör korset tydligare genom att använda en något tjockare linje
+      ctx.lineWidth = 3;
       const halfW = w * 0.4;
       const halfH = h * 0.4;
       ctx.beginPath();
