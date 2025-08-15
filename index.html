@@ -271,7 +271,9 @@
             const baseSpacing = canvas.height / numPlatforms;
             // Mellanrummet ökar med svårigheten men begränsas så att spelaren alltid kan nå nästa plattform
             let spacing = baseSpacing * difficulty;
-            const maxGap = 150;
+            // Maximalt avstånd mellan plattformar så att spelaren alltid kan nå nästa plattform.
+            // Justerad till 140 (studshöjden är cirka 144 pixlar) för att undvika omöjliga hopp.
+            const maxGap = 140;
             if (spacing > maxGap) spacing = maxGap;
             // Breddfaktor: slumpa mellan ett minimum (som minskar med svårighet) och 1 för variation
             const minWidthFactor = Math.max(0.4, 1 - 0.2 * difficulty);
@@ -354,8 +356,8 @@
         drawRoundedRect(ctx, plat.x, plat.y, plat.w, platformHeight, 6);
         // Överlagring baserat på typ
         if (plat.type === 'fragile') {
-          // Sköra plattformar får tydliga sprickor och tjockare linjer
-          drawCracks(ctx, plat.x, plat.y, plat.w, platformHeight);
+          // Sköra plattformar får sprickor som förvärras för varje gång man hoppar på dem
+          drawCracks(ctx, plat.x, plat.y, plat.w, platformHeight, plat.hitsLeft);
         } else if (plat.type === 'hazard') {
           // Fällor markeras med ett kors i beige färg för att synas mot den mörka bakgrunden
           ctx.strokeStyle = COLOR_PLATFORM;
@@ -427,16 +429,35 @@
     }
 
     // Ritfunktion för att rita sprickor på sköra plattformar
-    function drawCracks(ctx, x, y, w, h) {
+    // Parametern hitsLeft anger hur många hopp som återstår innan plattformen går sönder.
+    // Ju färre hopp kvar, desto tydligare och mer omfattande sprickor ritas.
+    function drawCracks(ctx, x, y, w, h, hitsLeft) {
+      // Om hitsLeft inte anges antar vi mildaste spricknivån
+      let severity = 0;
+      if (typeof hitsLeft === 'number' && isFinite(hitsLeft)) {
+        // hitsLeft varierar från 3 till 1 för sköra plattformar. 3 betyder minst skada.
+        severity = Math.max(0, 3 - hitsLeft);
+      }
+      // Grundfärg för sprickor är bakgrundsfärgen (mörk) så att de syns mot ljusa plattformar
       ctx.strokeStyle = COLOR_BG;
-      // Använd en något tjockare linje för att göra sprickorna tydliga
-      ctx.lineWidth = 3;
-      // Rita två diagonala sprickor som bildar ett tydligt "X"
+      // Linjetjocklek ökar med skadans omfattning
+      ctx.lineWidth = 2 + severity * 2;
+      // Marginalerna bestämmer hur långt sprickorna sträcker sig över plattformen
+      let margin = 0.1 - severity * 0.03;
+      if (margin < 0.02) margin = 0.02;
+      // Rita diagonala sprickor (ett X)
       ctx.beginPath();
-      ctx.moveTo(x + w * 0.1, y + h * 0.2);
-      ctx.lineTo(x + w * 0.9, y + h * 0.8);
-      ctx.moveTo(x + w * 0.9, y + h * 0.2);
-      ctx.lineTo(x + w * 0.1, y + h * 0.8);
+      // Diagonal 1
+      ctx.moveTo(x + w * margin, y + h * (1 - margin));
+      ctx.lineTo(x + w * (1 - margin), y + h * margin);
+      // Diagonal 2
+      ctx.moveTo(x + w * margin, y + h * margin);
+      ctx.lineTo(x + w * (1 - margin), y + h * (1 - margin));
+      // Om plattformen nästan är sönder (hitsLeft == 1), lägg till en vertikal spricka i mitten
+      if (severity >= 2) {
+        ctx.moveTo(x + w * 0.5, y);
+        ctx.lineTo(x + w * 0.5, y + h);
+      }
       ctx.stroke();
     }
 
