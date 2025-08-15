@@ -113,6 +113,9 @@
     let score;
     let gameOver;
     let keys = { left: false, right: false };
+    // Håller reda på x-positionen för den senast placerade plattformen. Används för att begränsa horisontell gap
+    // mellan plattformar vid omplacering så att de alltid går att nå. Detta initieras i init().
+    let lastPlatformX;
 
     // Tillägg för avancerat spel: sannolikheter och bonusar
     // Sannolikhet att en plattform är en fälla (dödsfälla). Ökar med svårighetsgrad men är alltid låg.
@@ -163,6 +166,14 @@
         }
         // Alla startplattformar är stabila och utan objekt
         platforms.push({ x, y, w, type: 'stable', hitsLeft: Infinity, broken: false, item: null });
+      }
+
+      // Sätt utgångspunkt för horisontell positionering av nästa plattform. Vi använder den nedersta plattformens x-värde
+      // som start för att gradvis generera nästa plattformar inom rimligt avstånd.
+      if (platforms.length > 0) {
+        lastPlatformX = platforms[0].x;
+      } else {
+        lastPlatformX = player.x;
       }
 
       // Rensa UI
@@ -281,8 +292,8 @@
             // Mellanrummet ökar med svårigheten men begränsas så att spelaren alltid kan nå nästa plattform
             let spacing = baseSpacing * difficulty;
             // Maximalt avstånd mellan plattformar så att spelaren alltid kan nå nästa plattform.
-            // Justerad till 140 (studshöjden är cirka 144 pixlar) för att undvika omöjliga hopp.
-            const maxGap = 140;
+            // Sänkt till 110 (studshöjden är cirka 144 pixlar) för att undvika omöjliga hopp och ge en marginal
+            const maxGap = 110;
             if (spacing > maxGap) spacing = maxGap;
             // Breddfaktor: slumpa mellan ett minimum (som minskar med svårighet) och 1 för variation
             const minWidthFactor = Math.max(0.4, 1 - 0.2 * difficulty);
@@ -291,8 +302,16 @@
             // Bestäm den nya y-positionen ovanför den nuvarande högsta plattformen
             const minY = Math.min(...platforms.map(p => p.y));
             plat.y = minY - spacing;
-            // Slumpa en ny x-position inom canvasens bredd
-            plat.x = Math.random() * (canvas.width - plat.w);
+            // Välj en ny x-position baserat på den tidigare plattformens x. Begränsa skillnaden så att
+            // spelaren alltid kan nå nästa plattform. Ju större "maxHGap", desto längre sidled kan man behöva röra sig.
+            const maxHGap = 80; // Maximal horisontell förskjutning i pixlar mellan plattformar
+            let proposedX = lastPlatformX + (Math.random() - 0.5) * 2 * maxHGap;
+            // Begränsa så att plattformen alltid ligger inom canvasens gränser
+            if (proposedX < 0) proposedX = 0;
+            if (proposedX > canvas.width - plat.w) proposedX = canvas.width - plat.w;
+            plat.x = proposedX;
+            // Uppdatera referensen för nästa plattform
+            lastPlatformX = proposedX;
             // Återställ status: plattform är inte trasig
             plat.broken = false;
             // Bestäm plattformstyp och samlarobjekt beroende på svårighetsgrad
@@ -383,7 +402,9 @@
         }
         // Rita samlarobjekt om det finns
         if (plat.item) {
-          drawItemIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2, plat.item);
+          // Rita samlarobjekt ovanför plattformen istället för mitt i den. Positionera
+          // ikonen tydligt ovanför plattformen med ett avstånd på ca 1.0× plattformshöjden.
+          drawItemIcon(ctx, plat.x + plat.w / 2, plat.y - platformHeight * 1.0, plat.item);
         }
         // Inga övriga ikoner – vi tar bort mönstret för att ge ett renare och mer juridiskt tema
       }
