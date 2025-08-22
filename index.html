@@ -57,6 +57,15 @@
     font-weight:700;
     line-height:1;
     box-shadow:0 2px 4px rgba(0,0,0,0.2);
+    /* Förhindra att textmarkering dyker upp när man håller in knappen på mobil */
+    user-select:none;
+    -webkit-user-select:none;
+    -ms-user-select:none;
+    -moz-user-select:none;
+    /* Ta bort tap-höjdpunkt på mobila enheter och undvik fokusring */
+    -webkit-tap-highlight-color: rgba(0,0,0,0);
+    outline:none;
+    touch-action: manipulation;
   }
   #controls button:active{
     transform:scale(0.95);
@@ -666,6 +675,22 @@
       f.t += dt;
       f.y -= 36*dt;
       if (f.t > 0.9) flyups.splice(i,1);
+    }
+
+    // Om spelaren har fallit nedanför skärmen (missat plattform) ska spelet avslutas
+    // Kontrollera efter övriga uppdateringar för att undvika studs mot borttagna plattformar
+    if (!gameOver && player.y > H) {
+      // Beräkna kupongbelopp baserat på uppnådd poäng (avrundas uppåt till närmaste 50, max 450)
+      if (score >= SCORE_CAP) {
+        currentAmount = SCORE_CAP;
+      } else if (score > 0) {
+        const rounded = Math.ceil(score / 50) * 50;
+        currentAmount = Math.min(SCORE_CAP - 50, rounded);
+      } else {
+        currentAmount = 0;
+      }
+      gameOver = true;
+      return;
     }
   }
 
