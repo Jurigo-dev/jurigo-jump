@@ -1,663 +1,576 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="sv">
 <head>
-  <meta charset="UTF-8">
-  <title>JURIGO JUMP</title>
-  <style>
-    /* Basic resets and layout */
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      font-family: sans-serif;
-      background-color: #223A6B; /* djup blå bakgrund */
-      color: #FFFFFF;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    h1 {
-      margin-top: 20px;
-      margin-bottom: 10px;
-      font-size: 24px;
-      color: #D8CAB8; /* beige rubrik */
-    }
-    #gameCanvas {
-      width: 360px;
-      height: 600px;
-      border: 2px solid #D8CAB8;
-      border-radius: 8px;
-      background-color: #223A6B;
-    }
-    #ui {
-      margin-top: 12px;
-      text-align: center;
-    }
-    button {
-      background-color: #D8CAB8;
-      color: #223A6B;
-      border: none;
-      border-radius: 6px;
-      padding: 8px 16px;
-      margin: 6px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    button:hover {
-      opacity: 0.9;
-    }
-    #scoreDisplay, #discountDisplay, #codeDisplay {
-      margin: 6px 0;
-    }
-
-    /* Kontroller för mobilt spelande */
-    #controls {
-      margin-top: 12px;
-      display: flex;
-      justify-content: center;
-      gap: 20px;
-    }
-    #controls button {
-      width: 60px;
-      height: 60px;
-      background-color: #D8CAB8;
-      border: none;
-      border-radius: 8px;
-      color: #223A6B;
-      font-size: 32px;
-      line-height: 60px;
-      text-align: center;
-      cursor: pointer;
-      user-select: none;
-    }
-    #controls button:active {
-      opacity: 0.8;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>JURIGO JUMP</title>
+<style>
+  :root{
+    --deep:#223A6B;     /* Jurigo djup blå (bakgrund) */
+    --beige:#D8CAB8;    /* Jurigo beige (plattformar) */
+    --white:#FFFFFF;
+    --blue:#2D7FF9;     /* Blå pickups/buff */
+    --haz1:#FF5722;     /* Farliga objekt */
+    --haz2:#FF3B30;
+    --shield:#22C55E;   /* Sköld-aura */
+  }
+  html,body{margin:0;height:100%;background:var(--deep);color:var(--white);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;}
+  .wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:12px;}
+  /* Canvasen skalas max 420x780 för att passa inbäddning utan scroll */
+  canvas{display:block;width:min(100%,420px);height:min(100vh - 24px,780px);max-width:420px;max-height:780px;background:linear-gradient(180deg,#1e335f 0%, #223A6B 60%, #1a2a52 100%);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.25);outline:1px solid rgba(255,255,255,.06)}
+  .hud{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;pointer-events:none}
+  .fly{position:absolute;color:var(--blue);font-weight:600;opacity:.95;transform:translate(-50%,-50%);text-shadow:0 1px 2px rgba(0,0,0,.35)}
+  .vignette{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 160px rgba(255,59,48,.16);opacity:0;transition:opacity .15s ease}
+  .vignette.on{opacity:1}
+  .win{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35);backdrop-filter:blur(1.5px);color:#fff;font-size:22px;font-weight:700;letter-spacing:.3px;text-align:center}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+</style>
 </head>
 <body>
-  <h1>JURIGO JUMP</h1>
-  <canvas id="gameCanvas" width="360" height="600"></canvas>
-  <div id="ui"></div>
-  <!-- Kontroller för mobila enheter: vänster och höger pilar -->
-  <div id="controls">
-    <button id="leftBtn">◄</button>
-    <button id="rightBtn">►</button>
+<div class="wrap">
+  <canvas id="game" width="420" height="780" aria-label="Jurigo Jump"></canvas>
+  <div class="hud" aria-hidden="true">
+    <div id="vignette" class="vignette"></div>
   </div>
+</div>
 
-  <script>
-    /*
-     * Jurigo Jump – ett enkelt skicklighetsspel inspirerat av Doodle Jump.
-     * Spelaren styr ett "dokument" som hoppar uppåt mellan plattformar. 
-     * Poängen ökar ju högre man kommer. Vid spelavslut genereras en rabattkod
-     * baserad på poängen, upp till 500 kr. 
-     */
+<script>
+(() => {
+  // ======= Konstanter & färger =======
+  const COLOR = {
+    bg: "#223A6B",
+    plat: "#D8CAB8",
+    white: "#FFFFFF",
+    blue: "#2D7FF9",
+    haz1: "#FF5722",
+    haz2: "#FF3B30",
+    shield: "#22C55E"
+  };
 
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
+  // Canvas
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
 
-    // Konstanter för färgpalett
-    const COLOR_BG = '#223A6B';
-    const COLOR_PLATFORM = '#D8CAB8';
-    const COLOR_PLAYER = '#D8CAB8';
-    const COLOR_ACCENT = '#FFFFFF';
+  // ======= Spelarens status =======
+  const player = {
+    x: W*0.5 - 20,
+    y: H*0.7,
+    w: 40,
+    h: 60,
+    vx: 0,
+    vy: 0,
+    onGround: false,
+    hasShield: false,
+    shieldTime: 0,   // sek
+    iFrames: 0,      // sek
+  };
 
-    // Spelvariabler
-    // Basbredd för plattformar. Själva plattformarna får individuella bredder (plat.w)
-    const basePlatformWidth = 60;
-    const platformHeight = 12;
-    const numPlatforms = 8;
-    let platforms = [];
-    let player;
-    let cameraY;
-    let score;
-    let gameOver;
-    let keys = { left: false, right: false };
-    // Håller reda på x-positionen för den senast placerade plattformen. Används för att begränsa horisontell gap
-    // mellan plattformar vid omplacering så att de alltid går att nå. Detta initieras i init().
-    let lastPlatformX;
+  // ======= Poäng/KR (1:1) =======
+  let score = 0;            // 0..500
+  const SCORE_CAP = 500;
 
-    // Tillägg för avancerat spel: sannolikheter och bonusar
-    // Sannolikhet att en plattform är en fälla (dödsfälla). Ökar med svårighetsgrad men är alltid låg.
-    // Fällor/minor tas bort helt i denna version – sannolikheten sätts till 0 så att de aldrig skapas.
-    const BASE_HAZARD_PROB = 0;
-    // Sannolikhet att en plattform är skör (går sönder efter några hopp). Ökar med svårighetsgrad.
-    const BASE_FRAGILE_PROB = 0.3;
-    // Sannolikhet att en plattform får ett samlarobjekt (lagbok, våg eller klubba).
-    const BASE_ITEM_PROB = 0.2;
-    // Sannolikhet att en plattform är en studsmatta som ger extra studs (spring). Ökar något med svårighetsgrad.
-    const BASE_SPRING_PROB = 0.1;
-    // Poängbonus för att plocka ett samlarobjekt
-    const ITEM_SCORE_BONUS = 500;
-    // Objekt som kan samlas
-    const ITEMS = ['lawbook', 'scales', 'gavel'];
+  // ======= Plattformar (alltid nåbara) =======
+  const platH = 12;
+  const initialPlatforms = 10;
+  let platforms = [];
+  let lastPlatX = W*0.5 - 40;
 
-    // Initialisering av spelet
-    function init() {
-      platforms = [];
-      // Startar kameran vid 0 – desto högre den flyttas upp, desto högre poäng
-      cameraY = 0;
-      score = 0;
-      gameOver = false;
+  // Reachability: begränsa vert/hor gap
+  const MAX_VERT_GAP = 110;         // pixlar
+  const MAX_HORZ_SHIFT = 80;        // pixlar sidled mellan successiva plattformar
 
-      // Skapa plattformar med slumpade x-positioner men jämn y-fördelning
-      // Den nedersta plattformen placeras direkt under spelaren för att underlätta starten.
-      // Beräkna avstånd mellan plattformar under init. Vi lägger till en extra division för att lämna utrymme under den nedersta plattformen.
-      const spacing = canvas.height / (numPlatforms + 1);
-      // Skapa spelarens startposition innan vi bestämmer plattformen under den. Spelaren placeras strax ovanför den nedersta plattformen.
-      player = {
-        x: canvas.width / 2 - 20,
-        width: 40,
-        height: 60,
-        // Lägg spelaren två plattformshöjder ovanför nedersta plattformen minus lite marginal
-        y: canvas.height - spacing - 60 - 10,
-        vy: 0,
-      };
-      for (let i = 0; i < numPlatforms; i++) {
-        // Fördela plattformar jämnt i vertikalled. Nedersta plattformen (i=0) hamnar vid canvas.height - spacing
-        const y = canvas.height - (i + 1) * spacing;
-        const w = basePlatformWidth;
-        let x;
-        // Den nedersta plattformen placeras centrerat under spelaren
-        if (i === 0) {
-          x = player.x + player.width / 2 - w / 2;
-        } else {
-          x = Math.random() * (canvas.width - w);
-        }
-        // Alla startplattformar är stabila och utan objekt
-        platforms.push({ x, y, w, type: 'stable', hitsLeft: Infinity, broken: false, item: null });
-      }
+  // ======= Fallande objekt =======
+  // Bra (blå) ger poäng + sköld
+  let blueDrops = []; // {x,y,v,type:'law'|'para'}
+  // Farliga (röd/orange) dödar om ingen sköld
+  let hazDrops = [];  // {x,y,v,type:'fire'|'bolt'|'rock'}
 
-      // Sätt utgångspunkt för horisontell positionering av nästa plattform. Vi använder den nedersta plattformens x-värde
-      // som start för att gradvis generera nästa plattformar inom rimligt avstånd.
-      if (platforms.length > 0) {
-        lastPlatformX = platforms[0].x;
-      } else {
-        lastPlatformX = player.x;
-      }
+  // Spawn-accumulatorer för sannolikheter per frame
+  let spawnAccBlue = 0, spawnAccHaz = 0;
 
-      // Rensa UI
-      document.getElementById('ui').innerHTML = '';
+  // ======= Andrum & storm-bursts =======
+  let andrumActive = false;
+  let andrumUntil = 0;
+  let nextAndrumAt = randRange(12,18);
+  let stormBurstActive = false;
+  let stormUntil = 0;
+  let nextStormAt = Infinity;
+
+  // ======= Fly-up text =======
+  const flyups = []; // {x,y,text,t}
+
+  // ======= Kontroller =======
+  const keys = { left:false, right:false };
+  addEventListener("keydown", e=>{
+    if(e.key==="ArrowLeft") keys.left=true;
+    if(e.key==="ArrowRight") keys.right=true;
+  });
+  addEventListener("keyup", e=>{
+    if(e.key==="ArrowLeft") keys.left=false;
+    if(e.key==="ArrowRight") keys.right=false;
+  });
+
+  // ======= Init =======
+  initPlatforms();
+  let lastTime = performance.now();
+  requestAnimationFrame(loop);
+
+  function initPlatforms(){
+    platforms.length = 0;
+    let y = H - 30;
+    for(let i=0;i<initialPlatforms;i++){
+      const w = 80;
+      const x = clamp(lastPlatX + randRange(-MAX_HORZ_SHIFT, MAX_HORZ_SHIFT), 8, W - w - 8);
+      platforms.push({x, y, w, fragile:false, hitsLeft:Infinity, spring:false});
+      lastPlatX = x;
+      y -= MAX_VERT_GAP * 0.9; // lite lättare i början
+    }
+    // Sätt spelaren strax över nedersta
+    player.x = platforms[0].x + platforms[0].w/2 - player.w/2;
+    player.y = platforms[0].y - player.h - 2;
+    player.vy = 0;
+  }
+
+  // ======= Easing & parametrisering =======
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  const easeInCubic = t => t*t*t;
+  const easeOutQuad = t => 1 - (1-t)*(1-t);
+
+  function paramsByScore(s){
+    const t = clamp01(s / SCORE_CAP);               // 0..1
+    const E = easeInCubic(t);
+    const D = easeOutQuad(t);
+
+    // Rates (per sekund)
+    let H0=0.8, Hmax=4.2;
+    let hazardRate = H0 + (Hmax - H0)*E;
+
+    let B0=1.2, Bmin=0.25;
+    let blueRate = Math.max(Bmin, B0 * (1 - 0.75*D));
+
+    // Caps (samtidiga)
+    const maxHaz = Math.round(8 + 10*E);   // 8..18
+    const maxBlue = Math.round(6 - 4*D);   // 6..2
+
+    // Speeds (px/s)
+    const vh = 220 + (520-220)*E;          // hazard speed
+    const vb = 180 + 120*D;                // blue speed
+
+    // Milestones
+    if (s >= 100) { // +blixt 10%
+      hazardRate *= 1.0;
+      blueRate   *= 0.90;
+    }
+    if (s >= 200) {
+      hazardRate *= 1.15;
+      blueRate   *= 0.90;
+    }
+    if (s >= 300) {
+      hazardRate *= 1.15;
+    }
+    if (s >= 400) {
+      hazardRate *= 1.20;
     }
 
-    // Inputhantering
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft') keys.left = true;
-      if (e.key === 'ArrowRight') keys.right = true;
-      // Starta om spelet när man trycker på mellanslag efter game over
-      if (gameOver && e.key === ' ') {
-        init();
-      }
-    });
-    document.addEventListener('keyup', (e) => {
-      if (e.key === 'ArrowLeft') keys.left = false;
-      if (e.key === 'ArrowRight') keys.right = false;
-    });
+    return {hazardRate, blueRate, maxHaz, maxBlue, vh, vb};
+  }
 
-    // Pekknappar för mobilt spelande – håll ned för kontinuerlig rörelse
-    // Vi hämtar referenser till knapparna
-    const leftBtn = document.getElementById('leftBtn');
-    const rightBtn = document.getElementById('rightBtn');
-    // Funktioner för att sätta tangentstatus
-    function setLeftDown() { keys.left = true; }
-    function setLeftUp() { keys.left = false; }
-    function setRightDown() { keys.right = true; }
-    function setRightUp() { keys.right = false; }
-    if (leftBtn && rightBtn) {
-      // Mus-event för desktop
-      leftBtn.addEventListener('mousedown', (e) => { e.preventDefault(); setLeftDown(); });
-      leftBtn.addEventListener('mouseup', (e) => { e.preventDefault(); setLeftUp(); });
-      leftBtn.addEventListener('mouseleave', (e) => { e.preventDefault(); setLeftUp(); });
-      rightBtn.addEventListener('mousedown', (e) => { e.preventDefault(); setRightDown(); });
-      rightBtn.addEventListener('mouseup', (e) => { e.preventDefault(); setRightUp(); });
-      rightBtn.addEventListener('mouseleave', (e) => { e.preventDefault(); setRightUp(); });
-      // Touch-event för mobila enheter
-      leftBtn.addEventListener('touchstart', (e) => { e.preventDefault(); setLeftDown(); });
-      leftBtn.addEventListener('touchend', (e) => { e.preventDefault(); setLeftUp(); });
-      rightBtn.addEventListener('touchstart', (e) => { e.preventDefault(); setRightDown(); });
-      rightBtn.addEventListener('touchend', (e) => { e.preventDefault(); setRightUp(); });
+  // Andrumplanering & storm
+  function scheduleWindows(dt){
+    const s = score;
+    const now = gameClock;
+
+    // Andrums-pulsar var 12–18 s i 2 s (eller 1.5 s >400)
+    if (!andrumActive && now >= nextAndrumAt){
+      andrumActive = true;
+      const dur = (s>=400)? 1.5 : 2.0;
+      andrumUntil = now + dur;
+    }
+    if (andrumActive && now >= andrumUntil){
+      andrumActive = false;
+      nextAndrumAt = now + randRange(12,18);
     }
 
-    function update() {
-      if (gameOver) return;
-      // Tillämpa gravitation
-      player.vy += 0.5;
-      player.y += player.vy;
+    // Storm bursts 450–500: var 6–8 s, 1 s
+    if (s >= 450 && !stormBurstActive && now >= nextStormAt){
+      stormBurstActive = true;
+      stormUntil = now + 1.0;
+    }
+    if (stormBurstActive && now >= stormUntil){
+      stormBurstActive = false;
+      nextStormAt = now + randRange(6,8);
+    }
+  }
 
-      // Flytta spelaren i sidled
-      // Öka rörelsehastigheten något för snabbare spelkänsla
-      const moveSpeed = 3.5;
-      if (keys.left) player.x -= moveSpeed;
-      if (keys.right) player.x += moveSpeed;
-      // Wrap around för horisontell rörelse
-      if (player.x < -player.width) player.x = canvas.width;
-      if (player.x > canvas.width) player.x = -player.width;
+  // ======= Spel-loop =======
+  let gameClock = 0; // sek
+  function loop(ts){
+    const dt = Math.min(0.033, (ts - lastTime)/1000); // cappa dt ~30fps
+    lastTime = ts;
+    gameClock += dt;
 
-      // Plattformskollisioner – bara när spelaren är på väg nedåt
-      if (player.vy > 0) {
-        for (const plat of platforms) {
-          // Hoppa över trasiga plattformar – de går inte att landa på längre
-          if (plat.broken) continue;
-          if (
-            player.x + player.width > plat.x &&
-            player.x < plat.x + plat.w &&
-            player.y + player.height > plat.y &&
-            player.y + player.height < plat.y + platformHeight + player.vy
-          ) {
-            // Om det mot förmodan finns en fälla/mina (ska ej förekomma) avslutas spelet direkt
-            if (plat.type === 'hazard') {
-              endGame();
-              return;
-            }
-            // Studsa spelaren uppåt: studsmattor ger en kraftigare studs
-            if (plat.type === 'spring') {
-              player.vy = -18;
-            } else {
-              // Standardstuds för stabila och sköra plattformar
-              player.vy = -12;
-            }
-            // Plocka eventuellt samlarobjekt
-            if (plat.item) {
-              score += ITEM_SCORE_BONUS;
-              plat.item = null;
-            }
-            // Hantera sköra plattformar: minska antal hopp kvar och markera som trasig om de tar slut
-            if (plat.type === 'fragile') {
-              plat.hitsLeft--;
-              if (plat.hitsLeft <= 0) {
-                plat.broken = true;
-              }
-            }
-            // Studsmattor och stabila plattformar påverkas inte av hopp (hitsLeft ändras ej)
+    update(dt);
+    draw(dt);
+
+    if (score >= SCORE_CAP){
+      winOverlay();
+      return;
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ======= Update =======
+  function update(dt){
+    scheduleWindows(dt);
+    // Rörelse vänster/höger
+    const accel = 750; // px/s^2
+    const maxVx = 260;
+    if (keys.left)  player.vx = clamp(player.vx - accel*dt, -maxVx,  maxVx);
+    else if (keys.right) player.vx = clamp(player.vx + accel*dt, -maxVx,  maxVx);
+    else player.vx *= 0.88;
+
+    player.x += player.vx * dt;
+    // wrap-kanter
+    if (player.x < -player.w) player.x = W;
+    if (player.x > W) player.x = -player.w;
+
+    // Gravitation / studs
+    player.vy += 1100 * dt;
+    player.y  += player.vy * dt;
+
+    // Plattform-kollision nedåt
+    if (player.vy > 0){
+      for (const p of platforms){
+        if (rectHit(player.x, player.y, player.w, player.h, p.x, p.y, p.w, platH)){
+          if (player.y + player.h <= p.y + player.vy*dt + 6){
+            player.y = p.y - player.h;
+            player.vy = -720;     // studs
             break;
           }
         }
       }
+    }
 
-      // Kamera – om spelaren når en höjd (y) som är högre än hälften av canvashöjden
-      const threshold = canvas.height * 0.4;
-      if (player.y < threshold) {
-        const diff = threshold - player.y;
-        player.y = threshold;
-        cameraY += diff;
-        // Flytta plattformar nedåt relativt kamerans rörelse
-        for (const plat of platforms) {
-          plat.y += diff;
-          // När en plattform försvinner från botten, placera den längst upp med ny x-position och justera bredd/avstånd efter svårighet
-          if (plat.y > canvas.height) {
-            // När en plattform försvinner från nederkanten placerar vi den ovanför den högsta plattformen.
-            // Beräkna svårighetsgrad baserat på poäng: ökar gradvis upp till faktor 3
-            const difficulty = 1 + Math.min(score / 2000, 2);
-            const baseSpacing = canvas.height / numPlatforms;
-            // Mellanrummet ökar med svårigheten men begränsas så att spelaren alltid kan nå nästa plattform
-            let spacing = baseSpacing * difficulty;
-            // Maximalt avstånd mellan plattformar så att spelaren alltid kan nå nästa plattform.
-            // Sänkt till 110 (studshöjden är cirka 144 pixlar) för att undvika omöjliga hopp och ge en marginal
-            const maxGap = 110;
-            if (spacing > maxGap) spacing = maxGap;
-            // Breddfaktor: slumpa mellan ett minimum (som minskar med svårighet) och 1 för variation
-            const minWidthFactor = Math.max(0.4, 1 - 0.2 * difficulty);
-            const widthFactor = minWidthFactor + Math.random() * (1 - minWidthFactor);
-            plat.w = basePlatformWidth * widthFactor;
-            // Bestäm den nya y-positionen ovanför den nuvarande högsta plattformen
-            const minY = Math.min(...platforms.map(p => p.y));
-            plat.y = minY - spacing;
-            // Välj en ny x-position baserat på den tidigare plattformens x. Begränsa skillnaden så att
-            // spelaren alltid kan nå nästa plattform. Ju större "maxHGap", desto längre sidled kan man behöva röra sig.
-            const maxHGap = 80; // Maximal horisontell förskjutning i pixlar mellan plattformar
-            let proposedX = lastPlatformX + (Math.random() - 0.5) * 2 * maxHGap;
-            // Begränsa så att plattformen alltid ligger inom canvasens gränser
-            if (proposedX < 0) proposedX = 0;
-            if (proposedX > canvas.width - plat.w) proposedX = canvas.width - plat.w;
-            plat.x = proposedX;
-            // Uppdatera referensen för nästa plattform
-            lastPlatformX = proposedX;
-            // Återställ status: plattform är inte trasig
-            plat.broken = false;
-            // Bestäm plattformstyp och samlarobjekt beroende på svårighetsgrad
-            // Justera sannolikheter baserat på svårighet
-            // Sannolikheter för olika plattformstyper baserat på svårighetsgrad.
-            // HazardProb hålls alltid 0 eftersom minor/fällor är borttagna.
-            let hazardProb = 0;
-            let fragileProb = BASE_FRAGILE_PROB + 0.1 * (difficulty - 1);
-            // Sannolikheten att få en studsmatta ökar lite med svårighetsgrad
-            let springProb = BASE_SPRING_PROB + 0.05 * (difficulty - 1);
-            let itemProb = BASE_ITEM_PROB;
-            // Begränsa sannolikheterna så att de håller sig inom rimliga gränser
-            fragileProb = Math.min(Math.max(fragileProb, 0), 0.7);
-            springProb = Math.min(Math.max(springProb, 0), 0.2);
-            // Slumpa typ baserat på fördelningen. HazardProb är 0 och ignoreras.
-            const r = Math.random();
-            if (r < fragileProb) {
-              // Skör plattform: klarar bara ett begränsat antal hopp
-              plat.type = 'fragile';
-              plat.hitsLeft = 3;
-              plat.item = null;
-            } else if (r < fragileProb + springProb) {
-              // Studsmatta: ger extra studs men går aldrig sönder
-              plat.type = 'spring';
-              plat.hitsLeft = Infinity;
-              plat.item = null;
-            } else {
-              // Stabil plattform
-              plat.type = 'stable';
-              plat.hitsLeft = Infinity;
-              plat.item = null;
-            }
-            // Tilldela eventuellt samlarobjekt om plattformen är stabil eller skör eller studsmatta
-            if (plat.type !== 'hazard' && Math.random() < itemProb) {
-              // Välj ett slumpmässigt objekt
-              const idx = Math.floor(Math.random() * ITEMS.length);
-              plat.item = ITEMS[idx];
-            }
-          }
-        }
-        score = Math.max(score, Math.floor(cameraY));
-      }
+    // Kamera uppåt = öka poäng (KR 1:1)
+    const cameraTop = H*0.4;
+    if (player.y < cameraTop){
+      const dy = cameraTop - player.y;
+      player.y += dy;
+      for (const p of platforms) p.y += dy;
+      for (const o of blueDrops) o.y += dy;
+      for (const o of hazDrops)  o.y += dy;
+      score = Math.min(SCORE_CAP, Math.round(score + dy*0.05)); // 20px ≈ 1 kr (tweakad)
+    }
 
-      // Game over – spelaren faller under nederkanten av canvas
-      if (player.y > canvas.height) {
-          endGame();
+    // Återanvänd plattformar (alltid nåbara)
+    for (const p of platforms){
+      if (p.y > H + 40){
+        // ny v-y
+        p.y -= MAX_VERT_GAP * platforms.length;
+        // ny bredd?
+        p.w = clamp(60 + randRange(-10, 40), 52, 110);
+        // begränsad sidledsförflyttning
+        p.x = clamp(lastPlatX + randRange(-MAX_HORZ_SHIFT, MAX_HORZ_SHIFT), 8, W - p.w - 8);
+        lastPlatX = p.x;
       }
     }
 
-    function draw() {
-      // Bakgrund
-      ctx.fillStyle = COLOR_BG;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Spawns – parametrar
+    let {hazardRate, blueRate, maxHaz, maxBlue, vh, vb} = paramsByScore(score);
+    // Andrum
+    if (andrumActive){ hazardRate *= 0.7; blueRate *= 1.2; }
+    // Storm burst
+    if (stormBurstActive){ hazardRate *= 1.3; /* garanti blå hanteras nedan */ }
 
-      // Plattformar med runda hörn
-      for (const plat of platforms) {
-        // Rita inte trasiga plattformar
-        if (plat.broken) continue;
-        // Välj basfärg beroende på plattformstyp
-        let baseColor;
-        if (plat.type === 'hazard') {
-          // Fällor är mörka för att ge en tydlig varning
-          baseColor = COLOR_BG;
-        } else if (plat.type === 'fragile') {
-          // Sköra plattformar är vita så de skiljer sig tydligt från de stabila
-          baseColor = COLOR_ACCENT;
-        } else if (plat.type === 'spring') {
-          // Studsmattor använder samma basfärg som stabila plattformar men får en särskild ikon
-          baseColor = COLOR_PLATFORM;
+    // Konvertera per sekund → sannolikhet via ackumulation
+    spawnAccHaz += hazardRate * dt;
+    spawnAccBlue += blueRate  * dt;
+
+    const noSpawnXMin = player.x - W*0.15;
+    const noSpawnXMax = player.x + player.w + W*0.15;
+
+    // Hazards
+    while (spawnAccHaz > 1 && hazDrops.length < maxHaz){
+      spawnAccHaz -= 1;
+      const hx = pickXAvoidCone(noSpawnXMin, noSpawnXMax, 14);
+      if (hx !== null && minHazSeparationOK(hx)){
+        hazDrops.push({x:hx, y:-24, v: vh*(0.9+Math.random()*0.2), type: pickHazardType()});
+      }
+    }
+    // Blues (garanti under storm)
+    let needBlue = stormBurstActive && (blueDrops.length === 0);
+    while ((spawnAccBlue > 1 || needBlue) && blueDrops.length < maxBlue){
+      if (!needBlue) spawnAccBlue -= 1;
+      needBlue = false;
+      const bx = pickBlueX(noSpawnXMin, noSpawnXMax);
+      blueDrops.push({x:bx, y:-18, v: vb*(0.9+Math.random()*0.2), type: Math.random()<0.6?"law":"para"});
+    }
+
+    // Uppdatera fall
+    for (const o of hazDrops)  o.y += o.v * dt;
+    for (const o of blueDrops) o.y += o.v * dt;
+
+    // Despawn off-screen
+    hazDrops = hazDrops.filter(o => o.y < H*1.2);
+    blueDrops = blueDrops.filter(o => o.y < H*1.4);
+
+    // Kollisioner (förlåtande hitboxar 88%)
+    const phit = shrinkRect(player, .88);
+
+    // – Hazards
+    for (let i=hazDrops.length-1;i>=0;i--){
+      const h = hazDrops[i];
+      const r = {x:h.x-10,y:h.y-10,w:20,h:20};
+      if (rectHitObj(phit, r)){
+        if (player.hasShield || player.iFrames>0){
+          hazDrops.splice(i,1); // neutralisera
         } else {
-          // Stabil plattform
-          baseColor = COLOR_PLATFORM;
+          // död
+          endGame();
+          return;
         }
-        ctx.fillStyle = baseColor;
-        drawRoundedRect(ctx, plat.x, plat.y, plat.w, platformHeight, 6);
-        // Överlagring baserat på typ
-        if (plat.type === 'fragile') {
-          // Sköra plattformar får sprickor som förvärras för varje gång man hoppar på dem
-          drawCracks(ctx, plat.x, plat.y, plat.w, platformHeight, plat.hitsLeft);
-        } else if (plat.type === 'hazard') {
-          // Fällor markeras med ett kors i beige färg för att synas mot den mörka bakgrunden
-          ctx.strokeStyle = COLOR_PLATFORM;
-          drawHazardIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2, plat.w, platformHeight);
-        } else if (plat.type === 'spring') {
-          // Rita studsmatta: visa spiraler eller bågar för att indikera studs
-          ctx.strokeStyle = COLOR_BG;
-          drawSpringIcon(ctx, plat.x + plat.w / 2, plat.y + platformHeight / 2, plat.w, platformHeight);
-        }
-        // Rita samlarobjekt om det finns
-        if (plat.item) {
-          // Rita samlarobjekt ovanför plattformen istället för mitt i den. Positionera
-          // ikonen tydligt ovanför plattformen med ett avstånd på ca 1.0× plattformshöjden.
-          drawItemIcon(ctx, plat.x + plat.w / 2, plat.y - platformHeight * 1.0, plat.item);
-        }
-        // Inga övriga ikoner – vi tar bort mönstret för att ge ett renare och mer juridiskt tema
       }
-
-      // Spelare som juristdomare med domarklubba
-      drawJudge(ctx, player.x, player.y, player.width, player.height);
-
-      // Poängvisning i övre vänstra hörnet
-      ctx.fillStyle = COLOR_ACCENT;
-      ctx.font = '16px sans-serif';
-      ctx.fillText('Poäng: ' + score, 8, 20);
     }
 
-    function drawRoundedRect(ctx, x, y, w, h, r) {
+    // – Blues
+    for (let i=blueDrops.length-1;i>=0;i--){
+      const b = blueDrops[i];
+      const r = {x:b.x-10,y:b.y-10,w:20,h:20};
+      if (rectHitObj(phit, r)){
+        const val = (b.type==="law")? 10 : 5;
+        score = Math.min(SCORE_CAP, score + val);
+        // fly-up
+        flyups.push({x:player.x+player.w/2, y:player.y-10, text:`+${val} kr`, t:0});
+        // sköld
+        extendShield((b.type==="law")?5.0:3.0);
+        blueDrops.splice(i,1);
+      }
+    }
+
+    // Sköld-timers
+    if (player.hasShield){
+      player.shieldTime -= dt;
+      if (player.shieldTime <= 0){
+        player.hasShield = false;
+        player.shieldTime = 0;
+        player.iFrames = 0.35;
+      }
+    }
+    if (player.iFrames>0) player.iFrames -= dt;
+
+    // “Fara nära” vignette
+    const near = hazDrops.some(h => Math.abs((h.x)-(player.x+player.w/2)) < 40 && h.y > player.y-60 && h.y < player.y+120);
+    document.getElementById("vignette").classList.toggle("on", near);
+
+    // Flyups
+    for (let i=flyups.length-1;i>=0;i--){
+      const f = flyups[i];
+      f.t += dt;
+      f.y -= 36*dt;
+      if (f.t > 0.9) flyups.splice(i,1);
+    }
+  }
+
+  function draw(dt){
+    // Clear
+    ctx.clearRect(0,0,W,H);
+
+    // Plattformar
+    for (const p of platforms){
+      roundedRect(p.x, p.y, p.w, platH, 6, COLOR.plat, true);
+    }
+
+    // Poäng / KR (1:1)
+    ctx.fillStyle = COLOR.white;
+    ctx.font = "16px system-ui, sans-serif";
+    ctx.fillText(`KR: ${score}`, 10, 22);
+
+    // Spelare
+    // Sköld-aura
+    if (player.hasShield){
+      const pulse = 0.85 + 0.15*Math.sin(gameClock*6);
       ctx.beginPath();
-      ctx.moveTo(x + r, y);
-      ctx.lineTo(x + w - r, y);
-      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-      ctx.lineTo(x + w, y + h - r);
-      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-      ctx.lineTo(x + r, y + h);
-      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-      ctx.lineTo(x, y + r);
-      ctx.quadraticCurveTo(x, y, x + r, y);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // Ritfunktion för subtile ikoner på plattformar
-    function drawPlatformIcon(ctx, cx, cy) {
-      // slumpa mellan några olika ikoner: pass, kontrakt, box, hus
-      const rand = Math.floor((cx + cy) % 4);
-      ctx.strokeStyle = COLOR_BG;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      switch (rand) {
-        case 0: // hus
-          ctx.moveTo(cx - 6, cy + 4);
-          ctx.lineTo(cx - 6, cy);
-          ctx.lineTo(cx, cy - 6);
-          ctx.lineTo(cx + 6, cy);
-          ctx.lineTo(cx + 6, cy + 4);
-          break;
-        case 1: // kontrakt (papper)
-          ctx.rect(cx - 5, cy - 5, 10, 10);
-          break;
-        case 2: // pass/bok
-          ctx.rect(cx - 5, cy - 4, 10, 8);
-          ctx.moveTo(cx - 3, cy - 4);
-          ctx.lineTo(cx - 3, cy + 4);
-          break;
-        case 3: // box
-          ctx.rect(cx - 4, cy - 4, 8, 8);
-          ctx.moveTo(cx - 4, cy);
-          ctx.lineTo(cx + 4, cy);
-          ctx.moveTo(cx, cy - 4);
-          ctx.lineTo(cx, cy + 4);
-          break;
-      }
-      ctx.stroke();
-    }
-
-    // Ritfunktion för att rita sprickor på sköra plattformar
-    // Parametern hitsLeft anger hur många hopp som återstår innan plattformen går sönder.
-    // Ju färre hopp kvar, desto tydligare och mer omfattande sprickor ritas.
-    function drawCracks(ctx, x, y, w, h, hitsLeft) {
-      // Om hitsLeft inte anges antar vi mildaste spricknivån
-      let severity = 0;
-      if (typeof hitsLeft === 'number' && isFinite(hitsLeft)) {
-        // hitsLeft varierar från 3 till 1 för sköra plattformar. 3 betyder minst skada.
-        severity = Math.max(0, 3 - hitsLeft);
-      }
-      // Grundfärg för sprickor är bakgrundsfärgen (mörk) så att de syns mot ljusa plattformar
-      ctx.strokeStyle = COLOR_BG;
-      // Linjetjocklek ökar med skadans omfattning
-      ctx.lineWidth = 2 + severity * 2;
-      // Marginalerna bestämmer hur långt sprickorna sträcker sig över plattformen
-      let margin = 0.1 - severity * 0.03;
-      if (margin < 0.02) margin = 0.02;
-      // Rita diagonala sprickor (ett X)
-      ctx.beginPath();
-      // Diagonal 1
-      ctx.moveTo(x + w * margin, y + h * (1 - margin));
-      ctx.lineTo(x + w * (1 - margin), y + h * margin);
-      // Diagonal 2
-      ctx.moveTo(x + w * margin, y + h * margin);
-      ctx.lineTo(x + w * (1 - margin), y + h * (1 - margin));
-      // Om plattformen nästan är sönder (hitsLeft == 1), lägg till en vertikal spricka i mitten
-      if (severity >= 2) {
-        ctx.moveTo(x + w * 0.5, y);
-        ctx.lineTo(x + w * 0.5, y + h);
-      }
-      ctx.stroke();
-    }
-
-    // Ritfunktion för fällor: ritar ett X över plattformen
-    function drawHazardIcon(ctx, cx, cy, w, h) {
-      // Använd den aktuella strokeStyle som sätts av den anropande koden för att rita korset
-      // Gör korset tydligare genom att använda en något tjockare linje
+      ctx.ellipse(player.x+player.w/2, player.y+player.h/2, player.w*0.65*pulse, player.h*0.7*pulse, 0, 0, Math.PI*2);
+      ctx.strokeStyle = COLOR.shield;
       ctx.lineWidth = 3;
-      const halfW = w * 0.4;
-      const halfH = h * 0.4;
-      ctx.beginPath();
-      ctx.moveTo(cx - halfW, cy - halfH);
-      ctx.lineTo(cx + halfW, cy + halfH);
-      ctx.moveTo(cx + halfW, cy - halfH);
-      ctx.lineTo(cx - halfW, cy + halfH);
+      ctx.globalAlpha = 0.85;
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
+    drawJudge(player.x, player.y, player.w, player.h);
 
-    // Ritfunktion för samlarobjekt (lagbok, våg, domarklubba)
-    function drawItemIcon(ctx, cx, cy, item) {
-      ctx.strokeStyle = COLOR_BG;
-      ctx.lineWidth = 2;
+    // Bra objekt
+    for (const b of blueDrops) drawBlue(b.x, b.y, b.type);
+    // Farliga
+    for (const h of hazDrops)  drawHaz(h.x, h.y, h.type);
+
+    // Fly-ups
+    ctx.font = "bold 16px system-ui, sans-serif";
+    ctx.fillStyle = COLOR.blue;
+    ctx.textAlign = "center";
+    for (const f of flyups){
+      ctx.globalAlpha = Math.max(0, 1 - f.t/0.9);
+      ctx.fillText(f.text, f.x, f.y);
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = "start";
+  }
+
+  function winOverlay(){
+    // Enkel vinst-overlay med omstart
+    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = "#fff";
+    ctx.font = "700 28px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("GRATTIS! Du vann 500 kr", W/2, H/2 - 10);
+    ctx.font = "16px system-ui, sans-serif";
+    ctx.fillText("Ladda om sidan för att spela igen.", W/2, H/2 + 22);
+    ctx.textAlign = "start";
+  }
+
+  function endGame(){
+    // mjuk “död”-overlay
+    ctx.fillStyle = "rgba(0,0,0,.55)";
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = "#fff";
+    ctx.font = "700 24px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Aj! Försök igen.", W/2, H/2 - 8);
+    ctx.fillText("Ladda om sidan.", W/2, H/2 + 20);
+    ctx.textAlign = "start";
+  }
+
+  // ======= Rit-hjälpare =======
+  function roundedRect(x,y,w,h,r,color,fill=true){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+    if (fill){ ctx.fillStyle = color; ctx.fill(); }
+    else { ctx.strokeStyle = color; ctx.stroke(); }
+  }
+
+  function drawJudge(x,y,w,h){
+    // Kropp
+    ctx.fillStyle = COLOR.white;
+    roundedRect(x+10,y+18,w-20,h-18,8,COLOR.white,true);
+    // Robe kant
+    ctx.strokeStyle = COLOR.white;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x+10,y+18,w-20,h-18);
+    // Klubba
+    ctx.fillStyle = COLOR.white;
+    ctx.fillRect(x+w-14, y+22, 6, 18);
+    ctx.fillRect(x+w-21, y+34, 20, 8);
+  }
+
+  function drawBlue(x,y,type){
+    // kontur för läsbarhet
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = COLOR.white;
+    ctx.fillStyle = COLOR.blue;
+    if (type==="law"){
+      // bok
+      roundedRect(x-10,y-12,20,24,4,COLOR.blue,true); ctx.stroke();
+      ctx.fillStyle = COLOR.white;
+      ctx.fillRect(x-3,y-6,6,2); // “titelstreck”
+    } else {
+      // paragraf “§” enkel symbol
       ctx.beginPath();
-      switch (item) {
-        case 'lawbook':
-          // Ett enkelt bok/pärm-symbol
-          ctx.rect(cx - 5, cy - 4, 10, 8);
-          ctx.moveTo(cx - 3, cy - 4);
-          ctx.lineTo(cx - 3, cy + 4);
-          break;
-        case 'scales':
-          // Våg-symbol: central pelare och två fat
-          // pelare
-          ctx.moveTo(cx, cy - 5);
-          ctx.lineTo(cx, cy + 5);
-          // översta tvärbalk
-          ctx.moveTo(cx - 6, cy - 1);
-          ctx.lineTo(cx + 6, cy - 1);
-          // vänster fat
-          ctx.moveTo(cx - 5, cy + 2);
-          ctx.lineTo(cx - 7, cy + 4);
-          ctx.lineTo(cx - 3, cy + 4);
-          ctx.closePath();
-          ctx.moveTo(cx + 5, cy + 2);
-          ctx.lineTo(cx + 7, cy + 4);
-          ctx.lineTo(cx + 3, cy + 4);
-          ctx.closePath();
-          break;
-        case 'gavel':
-          // En liten klubba: skaft och huvud
-          ctx.moveTo(cx - 5, cy);
-          ctx.lineTo(cx + 5, cy);
-          ctx.moveTo(cx + 3, cy - 3);
-          ctx.lineTo(cx + 3, cy + 3);
-          break;
-      }
-      ctx.stroke();
-    }
-
-    // Ritfunktion för studsmattor – ritar en serie halvcirklar (spiraler) för att visa studs
-    // cx, cy är mitten av plattformen och w, h är dess bredd och höjd
-    function drawSpringIcon(ctx, cx, cy, w, h) {
-      ctx.strokeStyle = COLOR_BG;
+      ctx.arc(x, y-4, 6, 0, Math.PI*2);
+      ctx.moveTo(x, y-4); ctx.arc(x, y+6, 6, 0, Math.PI*2);
+      ctx.strokeStyle = COLOR.white; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, y-10); ctx.lineTo(x, y+12);
+      ctx.strokeStyle = COLOR.blue; ctx.lineWidth = 3; ctx.stroke();
       ctx.lineWidth = 2;
-      const coilCount = 3;
-      // Radiens storlek för varje halvcirkel – relativ mot plattformens bredd
-      const coilRadius = w * 0.2;
-      // Vertikalt avstånd mellan varje coil
-      const verticalGap = h * 0.6 / (coilCount - 1);
-      // Startpositioner: centrerade runt cy
-      for (let i = 0; i < coilCount; i++) {
-        const yPos = cy - (h * 0.3) + i * verticalGap;
-        ctx.beginPath();
-        // Rita en halvcirkel uppåt
-        ctx.arc(cx, yPos, coilRadius, 0, Math.PI, false);
-        ctx.stroke();
-      }
     }
+  }
 
-    // Ritfunktion för spelaren: en juristdomare med domarklubba
-    function drawJudge(ctx, x, y, w, h) {
-      /*
-       * Figuren består av en enkel kropp (klädnad), ett huvud och en klubba.
-       * Vi använder endast de färger som definierats i paletten.
-       */
-      // Kropp/rock
-      const bodyWidth = w * 0.6;
-      const bodyHeight = h * 0.5;
-      const bodyX = x + (w - bodyWidth) / 2;
-      const bodyY = y + h - bodyHeight;
-      ctx.fillStyle = COLOR_PLAYER;
-      drawRoundedRect(ctx, bodyX, bodyY, bodyWidth, bodyHeight, 4);
-
-      // Huvud som en cirkel
-      const headRadius = w * 0.18;
-      const headX = x + w / 2;
-      const headY = bodyY - headRadius;
+  function drawHaz(x,y,type){
+    // gradient mellan haz1/haz2
+    const g = ctx.createLinearGradient(x-10,y-10,x+10,y+10);
+    g.addColorStop(0, COLOR.haz1); g.addColorStop(1, COLOR.haz2);
+    ctx.fillStyle = g; ctx.strokeStyle = COLOR.white; ctx.lineWidth = 1.5;
+    if (type==="fire"){
       ctx.beginPath();
-      ctx.arc(headX, headY, headRadius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Domarklubba: ett handtag och en klubbskaft
-      const handleLength = w * 0.5;
-      const handleThickness = w * 0.05;
-      const handleX = x + w;
-      const handleY = bodyY + bodyHeight * 0.3;
-      ctx.fillRect(handleX, handleY, handleLength, handleThickness);
-      // Klubban (hammarens huvud)
-      const hammerWidth = w * 0.12;
-      const hammerHeight = w * 0.08;
-      const hammerX = handleX + handleLength - hammerWidth * 0.5;
-      const hammerY = handleY - hammerHeight * 0.5;
-      ctx.fillRect(hammerX, hammerY, hammerWidth, hammerHeight);
+      ctx.moveTo(x, y-12); ctx.bezierCurveTo(x+10,y-4, x+10,y+10, x,y+12);
+      ctx.bezierCurveTo(x-10,y+10, x-10,y-4, x,y-12);
+      ctx.fill(); ctx.stroke();
+    } else if (type==="bolt"){
+      ctx.beginPath();
+      ctx.moveTo(x-6, y-12); ctx.lineTo(x+4, y-2); ctx.lineTo(x-2, y-2);
+      ctx.lineTo(x+6, y+12); ctx.lineTo(x-4, y+2); ctx.lineTo(x+2, y+2);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else { // rock
+      roundedRect(x-12,y-10,24,20,4,g,true); ctx.stroke();
     }
+  }
 
-    function endGame() {
-      gameOver = true;
-      // Räkna ut rabatt baserat på poäng (100 kr per 1000 poäng, max 500 kr)
-      const discount = Math.min(Math.floor(score / 1000) * 100, 500);
-      // Generera en simpel kod med slumpmässiga tecken
-      const randStr = Math.random().toString(36).substr(2, 6).toUpperCase();
-      const code = `JURI-${discount}-${randStr}`;
-      // Visa UI med resultat
-      const ui = document.getElementById('ui');
-      ui.innerHTML = '';
-      const scoreEl = document.createElement('div');
-      scoreEl.id = 'scoreDisplay';
-      scoreEl.textContent = `Din poäng: ${score}`;
-      ui.appendChild(scoreEl);
-      const discountEl = document.createElement('div');
-      discountEl.id = 'discountDisplay';
-      discountEl.textContent = `Rabatt: ${discount} kr`;
-      ui.appendChild(discountEl);
-      const codeEl = document.createElement('div');
-      codeEl.id = 'codeDisplay';
-      codeEl.textContent = `Kod: ${code}`;
-      ui.appendChild(codeEl);
-      // Kopieringsknapp
-      const copyBtn = document.createElement('button');
-      copyBtn.textContent = 'Kopiera kod';
-      copyBtn.onclick = () => {
-        navigator.clipboard.writeText(code);
-        copyBtn.textContent = 'Kopierad!';
-        setTimeout(() => copyBtn.textContent = 'Kopiera kod', 1500);
-      };
-      ui.appendChild(copyBtn);
-      // Spela igen-knapp
-      const replayBtn = document.createElement('button');
-      replayBtn.textContent = 'Spela igen';
-      replayBtn.onclick = init;
-      ui.appendChild(replayBtn);
+  // ======= Hjälp-funktioner =======
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+  function randRange(a,b){ return a + Math.random()*(b-a); }
+  function rectHit(x1,y1,w1,h1,x2,y2,w2,h2){
+    return x1 < x2+w2 && x1+w1 > x2 && y1 < y2+h2 && y1+h1 > y2;
+  }
+  function rectHitObj(a,b){ return rectHit(a.x,a.y,a.w,a.h,b.x,b.y,b.w,b.h); }
+  function shrinkRect(r,f){ const dw=r.w*(1-f), dh=r.h*(1-f); return {x:r.x+dw/2, y:r.y+dh/2, w:r.w-dw, h:r.h-dh}; }
+
+  function minHazSeparationOK(x){
+    // Minsta separation mellan samtidiga faror: 10 % skärmbredd
+    const minDx = W*0.10;
+    for (const h of hazDrops){
+      if (Math.abs(h.x - x) < minDx) return false;
     }
+    return true;
+  }
 
-    function loop() {
-      update();
-      draw();
-      requestAnimationFrame(loop);
+  function pickHazardType(){
+    const s = score;
+    const r = Math.random();
+    // 0–100: fire standard; ≥100: bolt inträde; ≥300: rock inträde
+    if (s<100) return "fire";
+    if (s<300){
+      return (r<0.10) ? "bolt" : "fire";
+    } else {
+      if (r<0.10) return "bolt";
+      if (r<0.30) return "rock";
+      return "fire";
     }
+  }
 
-    init();
-    loop();
-  </script>
+  function pickXAvoidCone(minX, maxX, tries=8){
+    for (let i=0;i<tries;i++){
+      const x = randRange(18, W-18);
+      if (x < minX || x > maxX) return x;
+    }
+    return null;
+  }
+  function pickBlueX(minX, maxX){
+    // 60% enkla (mitt), 30% medel, 10% risk (nära faror)
+    const r = Math.random();
+    let x = W*0.5 + randRange(-W*0.2, W*0.2);
+    if (r<0.3) x = W*0.5 + randRange(-W*0.35, W*0.35);
+    if (r<0.1) x = (Math.random()<0.5? W*0.12 : W*0.88) + randRange(-12,12);
+    // undvik cone
+    if (x > minX && x < maxX) x = (x < W*0.5? minX-12 : maxX+12);
+    return clamp(x, 14, W-14);
+  }
+
+  function extendShield(baseSec){
+    if (player.hasShield){
+      player.shieldTime = Math.min(8.0, player.shieldTime + baseSec*0.8);
+    } else {
+      player.hasShield = true;
+      player.shieldTime = Math.min(8.0, baseSec);
+    }
+  }
+
+})();
+</script>
 </body>
 </html>
