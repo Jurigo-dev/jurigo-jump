@@ -54,6 +54,72 @@
   @media (min-width:600px){
     #controls{display:none;}
   }
+
+  /* Meny och instruktioner overlay */
+  #menuOverlay, #instructionsOverlay {
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(34,58,107,0.95);
+    z-index:20;
+  }
+  #menuOverlay .menu-content, #instructionsOverlay .menu-content {
+    text-align:center;
+    color:var(--white);
+    max-width:340px;
+    padding:20px;
+  }
+  #menuOverlay button, #instructionsOverlay button {
+    margin:8px 4px;
+    padding:12px 28px;
+    font-size:20px;
+    font-weight:600;
+    background:var(--beige);
+    color:var(--deep);
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+  }
+  #instructionsOverlay p {
+    margin-bottom:16px;
+    font-size:14px;
+    line-height:1.3;
+  }
+
+  /* Meny och instruktioner overlay */
+  #menuOverlay, #instructionsOverlay {
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(34,58,107,0.95);
+    z-index:20;
+  }
+  #menuOverlay .menu-content, #instructionsOverlay .menu-content {
+    text-align:center;
+    color:var(--white);
+    max-width:340px;
+    padding:20px;
+  }
+  #menuOverlay button, #instructionsOverlay button {
+    margin:8px 4px;
+    padding:12px 28px;
+    font-size:20px;
+    font-weight:600;
+    background:var(--beige);
+    color:var(--deep);
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+  }
+  #instructionsOverlay p {
+    margin-bottom:16px;
+    font-size:14px;
+    line-height:1.3;
+  }
 </style>
 </head>
 <body>
@@ -68,6 +134,22 @@
 <div id="controls">
   <button id="leftBtn" aria-label="Vänster">&#9664;</button>
   <button id="rightBtn" aria-label="Höger">&#9654;</button>
+</div>
+
+<!-- Meny och instruktioner overlay -->
+<div id="menuOverlay">
+  <div class="menu-content">
+    <h2>JURIGO JUMP</h2>
+    <button id="startBtn">START</button>
+    <button id="instrBtn">INSTRUKTIONER</button>
+  </div>
+</div>
+<div id="instructionsOverlay" style="display:none;">
+  <div class="menu-content">
+    <h2>Instruktioner</h2>
+    <p>Hoppa från plattform till plattform och samla lagböcker (+10 kr) och paragrafer (+5 kr) för att få poäng och en skyddande sköld. Undvik de röda farorna! Vissa plattformar är sköra och bryts efter tre hopp.</p>
+    <button id="backBtn">TILLBAKA</button>
+  </div>
 </div>
 
 <script>
@@ -105,6 +187,14 @@
   // Kuponkod och giltighet (genereras vid vinst)
   let couponCode = null;
   let couponExpiry = null;
+
+  // Spelstatusflaggor
+  // gameStarted: spelet körs när detta är sant. Innan dess visas menyn.
+  // gameOver: spelet är avslutat (antingen vinst eller förlust) och en kupong visas.
+  // currentAmount: den avrundade kronbonus som spelaren erhåller vid gameOver.
+  let gameStarted = false;
+  let gameOver = false;
+  let currentAmount = 0;
 
   // ======= Poäng/KR (1:1) =======
   let score = 0;            // 0..500
@@ -169,6 +259,51 @@
     });
   }
 
+  // === Meny och instruktioner ===
+  const menuOverlay = document.getElementById('menuOverlay');
+  const instructionsOverlay = document.getElementById('instructionsOverlay');
+  const startBtn = document.getElementById('startBtn');
+  const instrBtn = document.getElementById('instrBtn');
+  const backBtn = document.getElementById('backBtn');
+  // Visa menyn initialt
+  if (menuOverlay) menuOverlay.style.display = 'flex';
+  // Startknapp
+  if (startBtn) {
+    startBtn.addEventListener('click', () => {
+      gameStarted = true;
+      gameOver = false;
+      currentAmount = 0;
+      if (menuOverlay) menuOverlay.style.display = 'none';
+      if (instructionsOverlay) instructionsOverlay.style.display = 'none';
+      resetGame();
+    });
+  }
+  // Instruktionsknapp
+  if (instrBtn) {
+    instrBtn.addEventListener('click', () => {
+      if (instructionsOverlay) instructionsOverlay.style.display = 'flex';
+      if (menuOverlay) menuOverlay.style.display = 'none';
+    });
+  }
+  // Tillbaka-knapp
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      if (instructionsOverlay) instructionsOverlay.style.display = 'none';
+      if (menuOverlay) menuOverlay.style.display = 'flex';
+    });
+  }
+  // Starta spelet med Enter eller Space när menyn är synlig
+  addEventListener('keydown', e => {
+    if (!gameStarted && (e.key === 'Enter' || e.key === ' ')) {
+      gameStarted = true;
+      gameOver = false;
+      currentAmount = 0;
+      if (menuOverlay) menuOverlay.style.display = 'none';
+      if (instructionsOverlay) instructionsOverlay.style.display = 'none';
+      resetGame();
+    }
+  });
+
   // ======= Init =======
   initPlatforms();
   let lastTime = performance.now();
@@ -180,7 +315,10 @@
     for(let i=0;i<initialPlatforms;i++){
       const w = 80;
       const x = clamp(lastPlatX + randRange(-MAX_HORZ_SHIFT, MAX_HORZ_SHIFT), 8, W - w - 8);
-      platforms.push({x, y, w, fragile:false, hitsLeft:Infinity, spring:false});
+      // Bestäm om plattformen ska vara skör (30 % sannolikhet)
+      const isFragile = Math.random() < 0.3;
+      const hits = isFragile ? 3 : Infinity;
+      platforms.push({x, y, w, fragile:isFragile, hitsLeft:hits});
       lastPlatX = x;
       y -= MAX_VERT_GAP * 0.9; // lite lättare i början
     }
@@ -188,6 +326,38 @@
     player.x = platforms[0].x + platforms[0].w/2 - player.w/2;
     player.y = platforms[0].y - player.h - 2;
     player.vy = 0;
+  }
+
+  // Återställ spelet till startläge
+  function resetGame(){
+    // Nollställ poäng och spelaregenskaper
+    score = 0;
+    player.x = W*0.5 - player.w/2;
+    player.y = H*0.7;
+    player.vx = 0;
+    player.vy = 0;
+    player.hasShield = false;
+    player.shieldTime = 0;
+    player.iFrames = 0;
+    // Nollställ plattformar
+    lastPlatX = W*0.5 - 40;
+    initPlatforms();
+    // Nollställ fallande objekt
+    blueDrops = [];
+    hazDrops = [];
+    spawnAccBlue = 0;
+    spawnAccHaz = 0;
+    // Nollställ andrum & storm
+    andrumActive = false;
+    andrumUntil = 0;
+    nextAndrumAt = randRange(12,18);
+    stormBurstActive = false;
+    stormUntil = 0;
+    nextStormAt = Infinity;
+    // Reset gameclock och kuponter
+    gameClock = 0;
+    couponCode = null;
+    couponExpiry = null;
   }
 
   // ======= Easing & parametrisering =======
@@ -266,13 +436,26 @@
   function loop(ts){
     const dt = Math.min(0.033, (ts - lastTime)/1000); // cappa dt ~30fps
     lastTime = ts;
+    // Om spelet inte startat ännu, vänta och rita bara meny/instruktioner
+    if (!gameStarted) {
+      requestAnimationFrame(loop);
+      return;
+    }
+    // Om spelet är över, rita slut-overlay och avbryt
+    if (gameOver) {
+      drawEndOverlay();
+      return;
+    }
     gameClock += dt;
 
     update(dt);
     draw(dt);
 
     if (score >= SCORE_CAP){
-      winOverlay();
+      // Vinst: sätt belopp till max och avsluta
+      currentAmount = SCORE_CAP;
+      gameOver = true;
+      drawEndOverlay();
       return;
     }
     requestAnimationFrame(loop);
@@ -298,12 +481,20 @@
     player.y  += player.vy * dt;
 
     // Plattform-kollision nedåt
-    if (player.vy > 0){
+        if (player.vy > 0){
       for (const p of platforms){
         if (rectHit(player.x, player.y, player.w, player.h, p.x, p.y, p.w, platH)){
           if (player.y + player.h <= p.y + player.vy*dt + 6){
             player.y = p.y - player.h;
             player.vy = -720;     // studs
+            // Om plattformen är skör, minska återstående hopp och bryt vid noll
+            if (p.hitsLeft !== Infinity){
+              p.hitsLeft--;
+              if (p.hitsLeft <= 0){
+                // flytta plattformen nedanför skärmen så att den återanvänds vid reposition
+                p.y = H + 60;
+              }
+            }
             break;
           }
         }
@@ -326,11 +517,15 @@
       if (p.y > H + 40){
         // ny v-y
         p.y -= MAX_VERT_GAP * platforms.length;
-        // ny bredd?
+        // ny bredd
         p.w = clamp(60 + randRange(-10, 40), 52, 110);
         // begränsad sidledsförflyttning
         p.x = clamp(lastPlatX + randRange(-MAX_HORZ_SHIFT, MAX_HORZ_SHIFT), 8, W - p.w - 8);
         lastPlatX = p.x;
+        // tilldela ny fragilitet: 30 % sannolikhet för skör plattform
+        const isFragile = Math.random() < 0.3;
+        p.fragile = isFragile;
+        p.hitsLeft = isFragile ? 3 : Infinity;
       }
     }
 
@@ -395,7 +590,7 @@
     // Kollisioner (förlåtande hitboxar 88%)
     const phit = shrinkRect(player, .88);
 
-    // – Hazards
+        // – Hazards
     for (let i=hazDrops.length-1;i>=0;i--){
       const h = hazDrops[i];
       // Ge farorna en något större hitbox för bättre träffsäkerhet
@@ -404,8 +599,17 @@
         if (player.hasShield || player.iFrames>0){
           hazDrops.splice(i,1); // neutralisera
         } else {
-          // död
-          endGame();
+          // Spelaren dör: beräkna kupongbelopp och avsluta spelet
+          // Runda upp till närmaste 50 kr, max 450 kr (om inte full vinst)
+          if (score >= SCORE_CAP) {
+            currentAmount = SCORE_CAP;
+          } else if (score > 0) {
+            const rounded = Math.ceil(score / 50) * 50;
+            currentAmount = Math.min(SCORE_CAP - 50, rounded);
+          } else {
+            currentAmount = 0;
+          }
+          gameOver = true;
           return;
         }
       }
@@ -454,10 +658,17 @@
     // Clear
     ctx.clearRect(0,0,W,H);
 
-    // Plattformar
-    for (const p of platforms){
-      roundedRect(p.x, p.y, p.w, platH, 6, COLOR.plat, true);
-    }
+        // Plattformar med skörhet och sprickor
+        for (const p of platforms){
+          if (p.hitsLeft !== Infinity) {
+            // Skör: vit plattform med sprickor beroende på återstående hopp
+            roundedRect(p.x, p.y, p.w, platH, 6, COLOR.white, true);
+            drawCracks(p.x, p.y, p.w, platH, p.hitsLeft);
+          } else {
+            // Stabil
+            roundedRect(p.x, p.y, p.w, platH, 6, COLOR.plat, true);
+          }
+        }
 
     // Poäng / KR (1:1)
     ctx.fillStyle = COLOR.white;
@@ -617,6 +828,72 @@
     } else { // rock
       roundedRect(x-12,y-10,24,20,4,g,true); ctx.stroke();
     }
+
+      // Rita sprickor för sköra plattformar. Ju lägre hitsLeft desto större sprickor.
+      function drawCracks(x,y,w,h,hitsLeft){
+        // hitsLeft = 3: små sprickor, 2: medel, 1: stora
+        ctx.save();
+        ctx.strokeStyle = COLOR.haz2;
+        ctx.lineWidth = 1.5;
+        if (hitsLeft <= 3){
+          // diagonal spricka från vänster upp till höger ner
+          ctx.beginPath();
+          ctx.moveTo(x + w*0.2, y + 1);
+          ctx.lineTo(x + w*0.8, y + h - 1);
+          ctx.stroke();
+        }
+        if (hitsLeft <= 2){
+          // motsatt diagonal
+          ctx.beginPath();
+          ctx.moveTo(x + w*0.8, y + 1);
+          ctx.lineTo(x + w*0.2, y + h - 1);
+          ctx.stroke();
+        }
+        if (hitsLeft <= 1){
+          // vertikal spricka
+          ctx.beginPath();
+          ctx.moveTo(x + w/2, y);
+          ctx.lineTo(x + w/2, y + h);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // Rita slut-overlay med kupongkod. Visas när gameOver är sant.
+      function drawEndOverlay(){
+        // Bakgrund
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(0,0,W,H);
+        ctx.textAlign = "center";
+        // Huvudrubrik: vinst eller förlust
+        ctx.fillStyle = COLOR.white;
+        ctx.font = "700 26px system-ui, sans-serif";
+        if (currentAmount >= SCORE_CAP) {
+          ctx.fillText("GRATTIS! Du vann 500 kr", W/2, H/2 - 60);
+        } else {
+          ctx.fillText("Spelet över", W/2, H/2 - 60);
+          ctx.font = "16px system-ui, sans-serif";
+          ctx.fillText(`Du nådde ${score} kr`, W/2, H/2 - 30);
+        }
+        // Generera kupong om inte redan genererad
+        if (!couponCode) {
+          const res = generateCoupon(currentAmount);
+          couponCode = res.code;
+          couponExpiry = res.expiry;
+        }
+        // Visa kod i monospace blått
+        ctx.font = "bold 20px Courier New, monospace";
+        ctx.fillStyle = COLOR.blue;
+        ctx.fillText(couponCode, W/2, H/2 + 10);
+        // Visa giltighetsdatum och instruktioner
+        ctx.fillStyle = COLOR.white;
+        ctx.font = "14px system-ui, sans-serif";
+        const expiryStr = couponExpiry.toLocaleDateString('sv-SE');
+        ctx.fillText(`Giltig t.o.m. ${expiryStr}`, W/2, H/2 + 34);
+        ctx.fillText("Presentera koden för avdrag", W/2, H/2 + 54);
+        ctx.fillText("Ladda om sidan för att spela igen.", W/2, H/2 + 74);
+        ctx.textAlign = "start";
+      }
   }
 
   // ======= Hjälp-funktioner =======
