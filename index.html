@@ -24,6 +24,36 @@
   .vignette.on{opacity:1}
   .win{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35);backdrop-filter:blur(1.5px);color:#fff;font-size:22px;font-weight:700;letter-spacing:.3px;text-align:center}
   .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+  /* Piltangenter för mobil/touch */
+  #controls{
+    position:absolute;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+    display:flex;
+    gap:40px;
+    z-index:10;
+  }
+  #controls button{
+    width:60px;
+    height:60px;
+    border-radius:50%;
+    background:var(--beige);
+    color:var(--deep);
+    border:none;
+    font-size:32px;
+    font-weight:700;
+    line-height:1;
+    box-shadow:0 2px 4px rgba(0,0,0,0.2);
+  }
+  #controls button:active{
+    transform:scale(0.95);
+  }
+  /* Dölj pilar på bredare skärmar */
+  @media (min-width:600px){
+    #controls{display:none;}
+  }
 </style>
 </head>
 <body>
@@ -32,6 +62,12 @@
   <div class="hud" aria-hidden="true">
     <div id="vignette" class="vignette"></div>
   </div>
+</div>
+
+<!-- Piltangenter för mobila enheter -->
+<div id="controls">
+  <button id="leftBtn" aria-label="Vänster">&#9664;</button>
+  <button id="rightBtn" aria-label="Höger">&#9654;</button>
 </div>
 
 <script>
@@ -65,6 +101,10 @@
     shieldTime: 0,   // sek
     iFrames: 0,      // sek
   };
+
+  // Kuponkod och giltighet (genereras vid vinst)
+  let couponCode = null;
+  let couponExpiry = null;
 
   // ======= Poäng/KR (1:1) =======
   let score = 0;            // 0..500
@@ -110,6 +150,24 @@
     if(e.key==="ArrowLeft") keys.left=false;
     if(e.key==="ArrowRight") keys.right=false;
   });
+
+  // Touch / muskontroller för pilarna på mobila enheter
+  const leftBtnElem = document.getElementById('leftBtn');
+  const rightBtnElem = document.getElementById('rightBtn');
+  if (leftBtnElem && rightBtnElem) {
+    const startLeft = (ev) => { ev.preventDefault(); keys.left = true; };
+    const endLeft   = (ev) => { ev.preventDefault(); keys.left = false; };
+    const startRight= (ev) => { ev.preventDefault(); keys.right = true; };
+    const endRight  = (ev) => { ev.preventDefault(); keys.right = false; };
+    ['mousedown','touchstart'].forEach(evType => {
+      leftBtnElem.addEventListener(evType, startLeft);
+      rightBtnElem.addEventListener(evType, startRight);
+    });
+    ['mouseup','touchend','touchcancel','mouseleave'].forEach(evType => {
+      leftBtnElem.addEventListener(evType, endLeft);
+      rightBtnElem.addEventListener(evType, endRight);
+    });
+  }
 
   // ======= Init =======
   initPlatforms();
@@ -278,6 +336,11 @@
 
     // Spawns – parametrar
     let {hazardRate, blueRate, maxHaz, maxBlue, vh, vb} = paramsByScore(score);
+    // Öka fallhastigheten på faror i steg för varje 100 kr
+    if (score >= 100) vh *= 1.10;
+    if (score >= 200) vh *= 1.20;
+    if (score >= 300) vh *= 1.30;
+    if (score >= 400) vh *= 1.40;
     // Andrum
     if (andrumActive){ hazardRate *= 0.7; blueRate *= 1.2; }
     // Storm burst
@@ -293,7 +356,21 @@
     // Hazards
     while (spawnAccHaz > 1 && hazDrops.length < maxHaz){
       spawnAccHaz -= 1;
-      const hx = pickXAvoidCone(noSpawnXMin, noSpawnXMax, 14);
+      let hx;
+      /*
+       * Placera faror slumpmässigt över hela skärmen. För att öka intensiteten mot slutet
+       * ökar sannolikheten att faror spawnar inom spelarens kon. Detta gör att
+       * farliga objekt faller ovanför spelaren ibland och ökar risken för kollision.
+       */
+      const t = Math.min(1, score / SCORE_CAP);
+      const probInside = 0.2 + 0.6 * t; // 20% i början, upp till 80% vid 500 kr
+      if (Math.random() < probInside) {
+        // helt slumpmässig X-position (ingen no-spawn cone)
+        hx = randRange(18, W - 18);
+      } else {
+        // undvik spelarens direkta kon för att lämna utrymme
+        hx = pickXAvoidCone(noSpawnXMin, noSpawnXMax, 14);
+      }
       if (hx !== null && minHazSeparationOK(hx)){
         hazDrops.push({x:hx, y:-24, v: vh*(0.9+Math.random()*0.2), type: pickHazardType()});
       }
@@ -321,7 +398,8 @@
     // – Hazards
     for (let i=hazDrops.length-1;i>=0;i--){
       const h = hazDrops[i];
-      const r = {x:h.x-10,y:h.y-10,w:20,h:20};
+      // Ge farorna en något större hitbox för bättre träffsäkerhet
+      const r = {x:h.x-12,y:h.y-12,w:24,h:24};
       if (rectHitObj(phit, r)){
         if (player.hasShield || player.iFrames>0){
           hazDrops.splice(i,1); // neutralisera
@@ -384,7 +462,8 @@
     // Poäng / KR (1:1)
     ctx.fillStyle = COLOR.white;
     ctx.font = "16px system-ui, sans-serif";
-    ctx.fillText(`KR: ${score}`, 10, 22);
+    // Visa poäng som kronor (1 poäng = 1 kr)
+    ctx.fillText(`Poäng: ${score} kr`, 10, 22);
 
     // Spelare
     // Sköld-aura
@@ -418,15 +497,35 @@
   }
 
   function winOverlay(){
-    // Enkel vinst-overlay med omstart
-    ctx.fillStyle = "rgba(0,0,0,.45)";
+    // Vinst-overlay med genererad kupongkod
+    ctx.fillStyle = "rgba(0,0,0,.55)";
     ctx.fillRect(0,0,W,H);
     ctx.fillStyle = "#fff";
-    ctx.font = "700 28px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("GRATTIS! Du vann 500 kr", W/2, H/2 - 10);
+    // Generera kupongkod en gång
+    if (!couponCode){
+      const {code, expiry} = generateCoupon();
+      couponCode = code;
+      couponExpiry = expiry;
+    }
+    ctx.font = "700 26px system-ui, sans-serif";
+    ctx.fillText("GRATTIS!", W/2, H/2 - 40);
+    ctx.font = "20px system-ui, sans-serif";
+    ctx.fillText("Du vann 500 kr", W/2, H/2 - 12);
     ctx.font = "16px system-ui, sans-serif";
-    ctx.fillText("Ladda om sidan för att spela igen.", W/2, H/2 + 22);
+    ctx.fillText("Kupongkod:", W/2, H/2 + 16);
+    ctx.font = "bold 20px monospace";
+    ctx.fillStyle = COLOR.blue;
+    ctx.fillText(couponCode, W/2, H/2 + 40);
+    ctx.fillStyle = "#fff";
+    const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
+    const expiryStr = couponExpiry.toLocaleDateString('sv-SE', options);
+    ctx.font = "14px system-ui, sans-serif";
+    ctx.fillText(`Giltig till ${expiryStr}`, W/2, H/2 + 64);
+    ctx.font = "14px system-ui, sans-serif";
+    ctx.fillText("Presentera koden för 500 kr avdrag.", W/2, H/2 + 86);
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.fillText("Ladda om sidan för att spela igen.", W/2, H/2 + 108);
     ctx.textAlign = "start";
   }
 
@@ -456,17 +555,26 @@
   }
 
   function drawJudge(x,y,w,h){
-    // Kropp
+    // Kropp/klänning: vit med lätt rundning
     ctx.fillStyle = COLOR.white;
-    roundedRect(x+10,y+18,w-20,h-18,8,COLOR.white,true);
-    // Robe kant
-    ctx.strokeStyle = COLOR.white;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x+10,y+18,w-20,h-18);
-    // Klubba
+    roundedRect(x + 10, y + 20, w - 20, h - 24, 6, COLOR.white, true);
+    // Huvud: cirkel högst upp
+    ctx.beginPath();
+    ctx.arc(x + w/2, y + 12, 10, 0, Math.PI*2);
     ctx.fillStyle = COLOR.white;
-    ctx.fillRect(x+w-14, y+22, 6, 18);
-    ctx.fillRect(x+w-21, y+34, 20, 8);
+    ctx.fill();
+    // Hår/hatt: mörk båge över huvudet för att tydliggöra domaren
+    ctx.beginPath();
+    ctx.arc(x + w/2, y + 11, 10, Math.PI * 0.1, Math.PI * 0.9);
+    ctx.strokeStyle = COLOR.bg;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    // Domarklubba: handtag och huvud
+    ctx.fillStyle = COLOR.white;
+    // handtag
+    ctx.fillRect(x + w - 18, y + 26, 5, 22);
+    // huvud på klubban
+    ctx.fillRect(x + w - 25, y + 46, 16, 6);
   }
 
   function drawBlue(x,y,type){
@@ -568,6 +676,25 @@
       player.hasShield = true;
       player.shieldTime = Math.min(8.0, baseSec);
     }
+  }
+
+  // Generera en unik kupongkod baserad på datum, tid och belopp
+  function generateCoupon(){
+    const now = new Date();
+    // Datum i format YYYYMMDD
+    const dateStr = now.toISOString().slice(0,10).replace(/-/g, "");
+    // Tid som HHMM
+    const timeStr = String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0');
+    // Kombinera och konvertera till bas36 för att maskera
+    const combined = String(parseInt(dateStr + timeStr, 10));
+    const encoded = BigInt(combined).toString(36).toUpperCase();
+    // Maskera belopp 500 genom bas36 (500 -> E4)
+    const amountEncoded = (500).toString(36).toUpperCase();
+    // Prefix för Jurigo
+    const code = 'JG' + encoded + amountEncoded;
+    // Giltighet: 30 dagar
+    const expiry = new Date(now.getTime() + 30*24*60*60*1000);
+    return {code, expiry};
   }
 
 })();
