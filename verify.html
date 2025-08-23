@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <title>Kontrollera rabattkod | Jurigo</title>
+  <style>
+    :root{
+      --deep:#223A6B;
+      --beige:#D8CAB8;
+      --white:#FFFFFF;
+    }
+    html,body{
+      margin:0;
+      height:100%;
+      background:var(--deep);
+      color:var(--white);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .container{
+      max-width:420px;
+      width:100%;
+      padding:20px;
+      background:rgba(0,0,0,0.25);
+      border-radius:8px;
+    }
+    h1{
+      margin-top:0;
+      font-size:24px;
+      text-align:center;
+    }
+    p{
+      line-height:1.4;
+    }
+    input,button{
+      padding:8px;
+      margin:6px 0;
+      border-radius:4px;
+      border:1px solid var(--beige);
+      background:var(--beige);
+      color:var(--deep);
+      width:100%;
+      box-sizing:border-box;
+      font-size:16px;
+    }
+    button{
+      cursor:pointer;
+      font-weight:600;
+    }
+    .hidden{
+      display:none;
+    }
+    .result p{
+      margin:4px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Kontrollera rabattkod</h1>
+    <div id="auth">
+      <p>Sidan är lösenordsskyddad. Ange lösenord:</p>
+      <input id="password" type="password" placeholder="Lösenord"/>
+      <button onclick="checkPassword()">Logga in</button>
+    </div>
+    <div id="verify" class="hidden">
+      <p>Ange rabattkoden nedan för att se detaljer.</p>
+      <input id="codeInput" type="text" placeholder="Kupongkod"/>
+      <button onclick="decodeCode()">Kontrollera</button>
+      <div id="output" class="result"></div>
+    </div>
+  </div>
+  <script>
+    // Enkelt lösenord för åtkomst (kan ändras efter behov)
+    const PASSWORD = 'jurigo2025';
+    function checkPassword(){
+      const entered = document.getElementById('password').value;
+      if(entered === PASSWORD){
+        document.getElementById('auth').style.display = 'none';
+        document.getElementById('verify').style.display = 'block';
+      } else {
+        alert('Fel lösenord.');
+      }
+    }
+    function decodeCode(){
+      const code = document.getElementById('codeInput').value.trim().toUpperCase();
+      const out = document.getElementById('output');
+      if(!code || !code.startsWith('JG') || code.length < 4){
+        out.innerHTML = '<p>Ogiltig kod.</p>';
+        return;
+      }
+      try{
+        const encodedPart = code.slice(2, -2);
+        const amountEncoded = code.slice(-2);
+        const amount = parseInt(amountEncoded, 36);
+        if(isNaN(amount)){
+          out.innerHTML = '<p>Ogiltig kod.</p>';
+          return;
+        }
+        // Återställ tidsstämpeln från bas36
+        let combined = parseInt(encodedPart, 36).toString();
+        // Säkerställ längd 12 (YYYYMMDDHHMM)
+        combined = combined.padStart(12,'0');
+        const datePart = combined.slice(0,8);
+        const timePart = combined.slice(8);
+        const year = datePart.slice(0,4);
+        const month = datePart.slice(4,6);
+        const day = datePart.slice(6,8);
+        const hour = timePart.slice(0,2);
+        const minute = timePart.slice(2,4);
+        const generated = new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
+        // Kuponger gäller i 30 dagar
+        const expiry = new Date(generated.getTime() + 30*24*60*60*1000);
+        const now = new Date();
+        const valid = now <= expiry;
+        const options = { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' };
+        const genStr = generated.toLocaleString('sv-SE', options);
+        const expStr = expiry.toLocaleString('sv-SE', options);
+        out.innerHTML = '<p>Belopp: ' + amount + ' kr</p>' +
+                        '<p>Genererad: ' + genStr + '</p>' +
+                        '<p>Giltig till: ' + expStr + '</p>' +
+                        '<p>Status: ' + (valid ? 'Giltig' : 'Utgången') + '</p>';
+      } catch(err){
+        out.innerHTML = '<p>Ogiltig kod.</p>';
+      }
+    }
+  </script>
+</body>
+</html>
