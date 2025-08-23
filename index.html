@@ -169,7 +169,7 @@
 <div id="instructionsOverlay" style="display:none;">
   <div class="menu-content">
     <h2>Instruktioner</h2>
-    <p>Hoppa från plattform till plattform och samla lagböcker (+10 kr) och paragrafer (+5 kr) för att få poäng och en skyddande sköld. Undvik de röda farorna! Vissa plattformar är sköra och bryts efter tre hopp.</p>
+    <p>Hoppa från plattform till plattform och samla lagböcker (+10 kr) och paragrafer (+5 kr) för att få poäng och en skyddande sköld. Undvik de röda farorna! Vissa plattformar är sköra och bryts efter tre hopp. I slutet av spelet får du även en värdekod som ger avdrag på din första juridiska fråga hos Jurigo.</p>
     <button id="backBtn">TILLBAKA</button>
   </div>
 </div>
@@ -340,8 +340,13 @@
       const w = 80;
       const x = clamp(lastPlatX + randRange(-MAX_HORZ_SHIFT, MAX_HORZ_SHIFT), 8, W - w - 8);
       // Bestäm om plattformen ska vara skör (30 % sannolikhet)
-      const isFragile = Math.random() < 0.3;
-      const hits = isFragile ? 3 : Infinity;
+      let isFragile = Math.random() < 0.3;
+      let hits = isFragile ? 3 : Infinity;
+      // Gör den första (nedersta) plattformen alltid stabil så spelaren inte behöver stressa direkt i början
+      if (i === 0) {
+        isFragile = false;
+        hits = Infinity;
+      }
       platforms.push({x, y, w, fragile:isFragile, hitsLeft:hits});
       lastPlatX = x;
       y -= MAX_VERT_GAP * 0.9; // lite lättare i början
@@ -395,11 +400,13 @@
     const D = easeOutQuad(t);
 
     // Rates (per sekund)
-    let H0=0.8, Hmax=4.2;
-    let hazardRate = H0 + (Hmax - H0)*E;
+    // Grundvärden för spawnfrekvens. Med högre slutvärden för farliga objekt
+    // och lägre för blå objekt blir spelet svårare i högre poängintervall.
+    let H0 = 0.8, Hmax = 5.2;           // start- och maxhastighet för faror (per sekund)
+    let hazardRate = H0 + (Hmax - H0) * E;
 
-    let B0=1.2, Bmin=0.25;
-    let blueRate = Math.max(Bmin, B0 * (1 - 0.75*D));
+    let B0 = 1.0, Bmin = 0.20;          // start- och minimihastighet för blå objekt
+    let blueRate = Math.max(Bmin, B0 * (1 - 0.75 * D));
 
     // Caps (samtidiga)
     const maxHaz = Math.round(8 + 10*E);   // 8..18
@@ -409,20 +416,22 @@
     const vh = 220 + (520-220)*E;          // hazard speed
     const vb = 180 + 120*D;                // blue speed
 
-    // Milestones
-    if (s >= 100) { // +blixt 10%
-      hazardRate *= 1.0;
+    // Milestones: öka faror mer och minska blå för varje tröskel
+    if (s >= 100) {
+      hazardRate *= 1.05;
       blueRate   *= 0.90;
     }
     if (s >= 200) {
-      hazardRate *= 1.15;
-      blueRate   *= 0.90;
+      hazardRate *= 1.20;
+      blueRate   *= 0.85;
     }
     if (s >= 300) {
-      hazardRate *= 1.15;
+      hazardRate *= 1.25;
+      blueRate   *= 0.85;
     }
     if (s >= 400) {
-      hazardRate *= 1.20;
+      hazardRate *= 1.35;
+      blueRate   *= 0.80;
     }
 
     return {hazardRate, blueRate, maxHaz, maxBlue, vh, vb};
