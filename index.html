@@ -155,7 +155,8 @@
     <div id="vignette" class="vignette"></div>
   </div>
       <!-- Poängvisare -->
-      <div id="scoreDisplay">Poäng: 0 kr</div>
+      <!-- Visar antalet poäng (utan valuta). Varje poäng omvandlas till kronor vid slutet. -->
+      <div id="scoreDisplay">Poäng: 0</div>
 </div>
 
 <!-- Piltangenter för mobila enheter -->
@@ -170,12 +171,32 @@
     <h2>JURIGO JUMP</h2>
     <button id="startBtn">START</button>
     <button id="instrBtn">INSTRUKTIONER</button>
+
+    <!-- Anpassningspanel för att välja figur, tillbehör och färg -->
+    <div id="customizePanel" style="margin-top:16px; text-align:left; color:var(--white);">
+      <p style="margin:4px 0 2px 0; font-size:16px;">Välj figur:</p>
+      <select id="genderSelect" style="width:100%; padding:6px; margin-bottom:6px; border-radius:4px; border:1px solid var(--beige); background:var(--beige); color:var(--deep);">
+        <option value="male">Man</option>
+        <option value="female">Kvinna</option>
+      </select>
+      <p style="margin:4px 0 2px 0; font-size:16px;">Välj tema:</p>
+      <select id="accessorySelect" style="width:100%; padding:6px; margin-bottom:6px; border-radius:4px; border:1px solid var(--beige); background:var(--beige); color:var(--deep);">
+        <option value="gavel">Domarklubba</option>
+        <option value="law">Lagtema</option>
+      </select>
+      <p style="margin:4px 0 2px 0; font-size:16px;">Färg på kläder:</p>
+      <select id="colorSelect" style="width:100%; padding:6px; border-radius:4px; border:1px solid var(--beige); background:var(--beige); color:var(--deep);">
+        <option value="#D8CAB8">Beige</option>
+        <option value="#2D7FF9">Blå</option>
+        <option value="#FFFFFF">Vit</option>
+      </select>
+    </div>
   </div>
 </div>
 <div id="instructionsOverlay" style="display:none;">
   <div class="menu-content">
     <h2>Instruktioner</h2>
-    <p>Hoppa från plattform till plattform och samla lagböcker (+10&nbsp;kr) och paragrafer (+5&nbsp;kr) för att få poäng och en skyddande sköld. Undvik de röda farorna! Vissa plattformar är sköra och bryts efter tre hopp. I slutet av spelet får du även en värdekod som ger avdrag på din första juridiska fråga hos Jurigo.</p>
+    <p>Hoppa från plattform till plattform och samla lagböcker (+10&nbsp;poäng) och paragrafer (+5&nbsp;poäng) för att öka din poäng och få en skyddande sköld. Undvik de röda farorna! Vissa plattformar är sköra och bryts efter tre hopp. Varje poäng motsvarar en krona i rabatt när spelet är slut, upp till&nbsp;500&nbsp;kr. I slutet av spelet får du en värdekod med samma belopp som dina poäng att använda på din första juridiska fråga hos Jurigo.</p>
     <p>Om du vill använda din kod direkt kan du ställa din fråga till <a href="mailto:jurist@jurigo.se">jurist@jurigo.se</a> och ange koden. Efter att spelet avslutats kan du enkelt kopiera koden genom att klicka direkt på koden eller använda knappen <em>Kopiera kod</em> som visas på skärmen. Vi återkommer inom 48&nbsp;timmar med hur vi går vidare och vad det nya priset blir. Efter ditt godkännande kan arbetet påbörjas. Att ställa en fråga eller initiera en första kontakt kostar inget förrän du har godkänt kostnaden.</p>
     <button id="backBtn">TILLBAKA</button>
   </div>
@@ -279,19 +300,21 @@
       couponCode = res.code;
       couponExpiry = res.expiry;
     }
-    // Titel och poäng
+    // Titel och information om poäng och rabatt
     if (currentAmount >= SCORE_CAP) {
-      endTitle.textContent = 'GRATTIS! Du vann 500 kr';
-      endScoreElem.textContent = '';
+      // Maxpoäng: visa gratulation och värde på kupongen
+      endTitle.textContent = 'GRATTIS! Du maxade 500 poäng';
+      endScoreElem.textContent = 'Din värdekod ger 500 kr i rabatt';
     } else {
       endTitle.textContent = 'Spelet över';
-      endScoreElem.textContent = 'Du nådde ' + score + ' kr';
+      endScoreElem.textContent = 'Du nådde ' + score + ' poäng (värde ' + currentAmount + ' kr)';
     }
     // Kod och giltighet
     endCodeElem.textContent = couponCode;
     const expiryStr = couponExpiry.toLocaleDateString('sv-SE');
     expiryInfoElem.textContent = 'Giltig t.o.m. ' + expiryStr;
-    instructionsInfoElem.textContent = 'Kopiera koden och ange den i ditt mejl till jurist@jurigo.se för att få avdrag.';
+    // Ange att koden motsvarar rabatten och hur man använder den
+    instructionsInfoElem.textContent = 'Din värdekod är värd ' + currentAmount + ' kr. Kopiera koden och ange den i ditt mejl till jurist@jurigo.se för att få avdrag.';
     endOverlay.style.display = 'flex';
   }
 
@@ -324,6 +347,13 @@
   // ======= Poäng/KR (1:1) =======
   let score = 0;            // 0..500
   const SCORE_CAP = 500;
+
+  // ======= Anpassningsval (figur, tillbehör, färg) =======
+  // Dessa variabler uppdateras via val i menyn före spelets start.
+  // Standardval: manlig figur, domarklubba som tillbehör, beige klädsel.
+  let selectedGender = 'male';
+  let selectedAccessory = 'gavel';
+  let selectedColor = '#D8CAB8';
 
   // ======= Plattformar (alltid nåbara) =======
   const platH = 12;
@@ -417,6 +447,30 @@
     backBtn.addEventListener('click', () => {
       if (instructionsOverlay) instructionsOverlay.style.display = 'none';
       if (menuOverlay) menuOverlay.style.display = 'flex';
+    });
+  }
+
+  // === Anpassningsval för figur, tillbehör och färg ===
+  // Hämtar referenser till select-elementen i menyoverlay och lyssnar på ändringar.
+  const genderSelectElem = document.getElementById('genderSelect');
+  const accessorySelectElem = document.getElementById('accessorySelect');
+  const colorSelectElem = document.getElementById('colorSelect');
+  if (genderSelectElem) {
+    selectedGender = genderSelectElem.value;
+    genderSelectElem.addEventListener('change', (e) => {
+      selectedGender = e.target.value;
+    });
+  }
+  if (accessorySelectElem) {
+    selectedAccessory = accessorySelectElem.value;
+    accessorySelectElem.addEventListener('change', (e) => {
+      selectedAccessory = e.target.value;
+    });
+  }
+  if (colorSelectElem) {
+    selectedColor = colorSelectElem.value;
+    colorSelectElem.addEventListener('change', (e) => {
+      selectedColor = e.target.value;
     });
   }
   // Starta spelet med Enter eller Space när menyn är synlig
@@ -759,8 +813,8 @@
       if (rectHitObj(phit, r)){
         const val = (b.type==="law")? 10 : 5;
         score = Math.min(SCORE_CAP, score + val);
-        // fly-up
-        flyups.push({x:player.x+player.w/2, y:player.y-10, text:`+${val} kr`, t:0});
+        // fly-up: visa endast antal poäng (inte valuta) när spelaren plockar ett föremål
+        flyups.push({x:player.x+player.w/2, y:player.y-10, text:`+${val}`, t:0});
         // sköld
         extendShield((b.type==="law")?5.0:3.0);
         blueDrops.splice(i,1);
@@ -812,7 +866,8 @@
         ctx.clearRect(0,0,W,H);
         // Uppdatera text i poängvisaren (utanför canvas)
         if (scoreDisplay) {
-          scoreDisplay.textContent = `Poäng: ${score} kr`;
+          // Visa endast poäng i löpande spelet. Poängen omvandlas till kronor i slutet.
+          scoreDisplay.textContent = `Poäng: ${score}`;
         }
 
         // Plattformar med skörhet och sprickor
@@ -919,12 +974,25 @@
   }
 
   function drawJudge(x,y,w,h){
-    // Kropp/klänning: vit med lätt rundning
-    ctx.fillStyle = COLOR.white;
-    roundedRect(x + 10, y + 20, w - 20, h - 24, 6, COLOR.white, true);
-    // Huvud: cirkel högst upp
+    // Rita kroppen baserat på vald figur (male/female) och färg
+    const bodyColor = selectedColor || COLOR.white;
+    if (selectedGender === 'female') {
+      // Kvinnlig figur: rita en lätt utsvängd form som en klänning
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.25, y + 20);
+      ctx.lineTo(x + w * 0.75, y + 20);
+      ctx.lineTo(x + w * 0.9,  y + h - 4);
+      ctx.lineTo(x + w * 0.1,  y + h - 4);
+      ctx.closePath();
+      ctx.fillStyle = bodyColor;
+      ctx.fill();
+    } else {
+      // Manlig figur: rektangulär kropp med rundade hörn
+      roundedRect(x + 10, y + 20, w - 20, h - 24, 6, bodyColor, true);
+    }
+    // Huvud: cirkel högst upp (vita för neutral hudton)
     ctx.beginPath();
-    ctx.arc(x + w/2, y + 12, 10, 0, Math.PI*2);
+    ctx.arc(x + w/2, y + 12, 10, 0, Math.PI * 2);
     ctx.fillStyle = COLOR.white;
     ctx.fill();
     // Hår/hatt: mörk båge över huvudet för att tydliggöra domaren
@@ -933,12 +1001,40 @@
     ctx.strokeStyle = COLOR.bg;
     ctx.lineWidth = 4;
     ctx.stroke();
-    // Domarklubba: handtag och huvud
-    ctx.fillStyle = COLOR.white;
-    // handtag
-    ctx.fillRect(x + w - 18, y + 26, 5, 22);
-    // huvud på klubban
-    ctx.fillRect(x + w - 25, y + 46, 16, 6);
+    // Tillbehör: gavel eller lagtema
+    if (selectedAccessory === 'gavel') {
+      // Domarklubba: handtag och huvud (ritas i vitt för att synas)
+      ctx.fillStyle = COLOR.white;
+      // handtag
+      ctx.fillRect(x + w - 18, y + 26, 5, 22);
+      // huvud på klubban
+      ctx.fillRect(x + w - 25, y + 46, 16, 6);
+    } else if (selectedAccessory === 'law') {
+      // Lagtema: rita en liten lagbok med paragraf-tecken i handen
+      // Bok
+      const bx = x + w - 22;
+      const by = y + 36;
+      const bw = 14;
+      const bh = 18;
+      // bokkropp
+      roundedRect(bx, by, bw, bh, 3, COLOR.blue, true);
+      // §-symbolens bågar
+      ctx.strokeStyle = COLOR.white;
+      ctx.lineWidth = 1.2;
+      // övre cirkel
+      ctx.beginPath();
+      ctx.arc(bx + bw/2, by + 5, 3, 0, Math.PI * 2);
+      ctx.stroke();
+      // nedre cirkel
+      ctx.beginPath();
+      ctx.arc(bx + bw/2, by + 11, 3, 0, Math.PI * 2);
+      ctx.stroke();
+      // vertikal linje mellan cirklarna
+      ctx.beginPath();
+      ctx.moveTo(bx + bw/2, by + 2);
+      ctx.lineTo(bx + bw/2, by + 16);
+      ctx.stroke();
+    }
   }
 
   function drawBlue(x,y,type){
